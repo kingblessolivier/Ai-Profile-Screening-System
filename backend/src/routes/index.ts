@@ -10,7 +10,7 @@ import {
 } from "../controllers/candidateController";
 import {
   runScreening, getScreeningResults, getScreeningResult,
-  getLatestResultForJob, deleteScreeningResult,
+  getLatestResultForJob, deleteScreeningResult, exportScreeningResultPdf,
 } from "../controllers/screeningController";
 
 const router = Router();
@@ -53,6 +53,7 @@ router.post("/screening/run", authenticate, runScreening);
 router.get("/screening", authenticate, getScreeningResults);
 router.get("/screening/job/:jobId/latest", authenticate, getLatestResultForJob);
 router.get("/screening/:id", authenticate, getScreeningResult);
+router.get("/screening/:id/report/pdf", authenticate, exportScreeningResultPdf);
 router.delete("/screening/:id", authenticate, deleteScreeningResult);
 
 export default router;

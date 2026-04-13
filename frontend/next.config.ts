@@ -1,7 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  turbopack: {
+    root: __dirname,
+    resolveAlias: {
+      tailwindcss: "tailwindcss",
+      "tailwindcss/nesting": "tailwindcss/nesting",
+    },
+  },
 };
 
 export default nextConfig;

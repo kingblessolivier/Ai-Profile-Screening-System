@@ -39,6 +39,101 @@ function extractJSON(text: string): string {
   return (fenced ? fenced[1] : text).trim();
 }
 
+function isGeminiQuotaError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("429 Too Many Requests") ||
+    message.includes("Quota exceeded") ||
+    message.includes("rate limit") ||
+    message.includes("RESOURCE_EXHAUSTED")
+  );
+}
+
+function buildDeterministicCandidateScore(
+  candidate: TalentProfile,
+  compositeScore: number,
+  breakdown: ScoreBreakdown,
+  skillGap: SkillGapAnalysis,
+  rank: number
+): CandidateScore {
+  const strengths: string[] = [];
+  if (breakdown.skillsScore >= 80) strengths.push("Strong direct skill alignment with the job requirements");
+  if (breakdown.experienceScore >= 80) strengths.push("Relevant experience level aligns well with the role seniority");
+  if (breakdown.projectsScore >= 70) strengths.push("Portfolio shows relevant project work and applied experience");
+  if (breakdown.availabilityScore >= 80) strengths.push("Availability profile is favorable for hiring timelines");
+  if (strengths.length === 0) strengths.push("Deterministic scoring indicates a reasonable baseline match");
+
+  const gaps = skillGap.missing.length > 0
+    ? skillGap.missing.slice(0, 3).map(skill => `Missing or weak evidence for ${skill}`)
+    : ["No major gaps identified from the available profile data"];
+
+  const recommendation: CandidateScore["recommendation"] =
+    compositeScore >= 85 ? "Strongly Recommended" :
+    compositeScore >= 70 ? "Recommended" :
+    compositeScore >= 55 ? "Consider" :
+    "Not Recommended";
+
+  const name = `${candidate.firstName} ${candidate.lastName}`;
+  const evidence = [
+    `Skills score ${breakdown.skillsScore}/100 from direct requirement overlap`,
+    `Experience score ${breakdown.experienceScore}/100 from role history and tenure`,
+    `Projects score ${breakdown.projectsScore}/100 from applied project evidence`,
+  ];
+
+  return {
+    candidateId: candidate._id ?? candidate.email,
+    candidateName: name,
+    email: candidate.email,
+    rank,
+    matchScore: compositeScore,
+    deterministicScore: compositeScore,
+    breakdown,
+    strengths: strengths.slice(0, 5),
+    gaps,
+    evidence,
+    confidence: Math.min(95, Math.max(55, compositeScore)),
+    recommendation,
+    summary: `${name} received a deterministic score of ${compositeScore}/100 based on the available profile data. Screening fell back to the local scoring engine because Gemini quota was unavailable.`,
+    interviewQuestions: [
+      "Walk me through the most relevant project or role for this job.",
+      "Which parts of the required stack are you strongest in, and where would you need support?",
+      "How would you approach your first 30 days in this role?",
+    ],
+    skillGapAnalysis: skillGap,
+  };
+}
+
+function buildFallbackResult(
+  job: Job,
+  prescored: { candidate: TalentProfile; compositeScore: number; breakdown: ScoreBreakdown; skillGap: SkillGapAnalysis }[],
+  shortlistSize: number,
+  startTime: number
+): Omit<ScreeningResult, "_id"> {
+  const shortlist = prescored
+    .slice()
+    .sort((a, b) => b.compositeScore - a.compositeScore)
+    .slice(0, shortlistSize)
+    .map((entry, index) =>
+      buildDeterministicCandidateScore(entry.candidate, entry.compositeScore, entry.breakdown, entry.skillGap, index + 1)
+    );
+
+  return {
+    jobId: job._id ?? "",
+    jobTitle: job.title,
+    totalApplicants: prescored.length,
+    shortlistSize: shortlist.length,
+    shortlist,
+    aiModel: "deterministic-fallback",
+    processingTimeMs: Date.now() - startTime,
+    screeningDate: new Date().toISOString(),
+    status: "completed",
+    progress: 100,
+    startedAt: new Date(startTime).toISOString(),
+    completedAt: new Date().toISOString(),
+    poolInsights: computePoolInsights(prescored.map(item => item.candidate), job),
+  };
+}
+
 // ─── Pre-process candidate into a clean evaluation object ─────────────────────
 
 function buildCandidateSummary(c: TalentProfile, score: number, breakdown: ScoreBreakdown) {
@@ -75,17 +170,17 @@ function buildScreeningPrompt(
   candidates: ReturnType<typeof buildCandidateSummary>[],
   shortlistSize: number
 ): string {
-  const jobBlock = `
-JOB OPENING:
-- Title: ${job.title}
-- Level: ${job.experienceLevel}
-- Type: ${job.type}
-- Location: ${job.location}
-- Description: ${job.description.substring(0, 400)}
-- Required Skills: ${job.requirements.filter(r => r.required).map(r => `${r.skill}${r.level ? ` (${r.level})` : ""}${r.yearsRequired ? ` ${r.yearsRequired}+ yrs` : ""}`).join(", ")}
-- Nice to Have: ${job.niceToHave?.join(", ") || "N/A"}
-- Key Responsibilities: ${job.responsibilities.slice(0, 5).join("; ")}
-`;
+  const jobBlock = [
+    "JOB OPENING:",
+    `- Title: ${job.title}`,
+    `- Level: ${job.experienceLevel}`,
+    `- Type: ${job.type}`,
+    `- Location: ${job.location}`,
+    `- Description: ${job.description.substring(0, 400)}`,
+    `- Required Skills: ${job.requirements.filter(r => r.required).map(r => `${r.skill}${r.level ? ` (${r.level})` : ""}${r.yearsRequired ? ` ${r.yearsRequired}+ yrs` : ""}`).join(", ")}`,
+    `- Nice to Have: ${job.niceToHave?.join(", ") || "N/A"}`,
+    `- Key Responsibilities: ${job.responsibilities.slice(0, 5).join("; ")}`,
+  ].join("\n");
 
   const candidatesBlock = candidates
     .map(
@@ -107,69 +202,80 @@ CANDIDATE_${i + 1}:
     )
     .join("---\n");
 
-  return `You are an expert AI recruitment specialist for Umurava, a leading African tech talent platform. Your task is to evaluate and rank candidates for the job opening below.
+  return [
+    "You are an expert AI recruitment specialist for Umurava, a leading African tech talent platform. Your task is to evaluate and rank candidates for the job opening below.",
+    "",
+    jobBlock,
+    "",
+    `CANDIDATES TO EVALUATE (${candidates.length} total):`,
+    candidatesBlock,
+    "",
+    "SCORING INSTRUCTIONS:",
+    "1. Build on the preScore (deterministic algorithmic score) - adjust up or down based on qualitative signals",
+    "2. Consider: depth of relevant experience, quality of projects, role-tech stack alignment, communication from headline",
+    "3. Be SPECIFIC - reference actual data from profiles, not generic statements",
+    "4. Be HONEST about gaps - do not inflate scores",
+    `5. Produce a ranked shortlist of the TOP ${shortlistSize} candidates`,
+    "",
+    "RETURN ONLY valid JSON in this exact structure (no markdown, no extra text):",
+    "",
+    "{",
+    "  \"shortlist\": [",
+    "    {",
+    "      \"candidateId\": \"<id from profile>\",",
+    "      \"candidateName\": \"<full name>\",",
+    "      \"email\": \"<email>\",",
+    "      \"rank\": 1,",
+    "      \"matchScore\": 88,",
+    "      \"breakdown\": {",
+    "        \"skillsScore\": 92,",
+    "        \"experienceScore\": 85,",
+    "        \"educationScore\": 78,",
+    "        \"projectsScore\": 90,",
+    "        \"availabilityScore\": 100",
+    "      },",
+    "      \"strengths\": [",
+    "        \"5 years Node.js with microservices at scale\",",
+    "        \"Led AI integration project using Gemini API\",",
+    "        \"Open source contributor with 200+ GitHub stars\"",
+    "      ],",
+    "      \"gaps\": [",
+    "        \"No direct experience with GraphQL (nice-to-have)\",",
+    "        \"Location may require relocation for on-site roles\"",
+    "      ],",
+    "      \"recommendation\": \"Strongly Recommended\",",
+    "      \"summary\": \"Alice is a strong match with 5+ years of relevant Node.js experience, proven AI project delivery, and immediate availability. Her skill set directly covers 90% of required technologies.\",",
+    "      \"confidence\": 92,",
+    "      \"evidence\": [",
+    "        \"5+ years of Node.js and TypeScript in production\",",
+    "        \"Integrated AI screening tools using Google Gemini API\",",
+    "        \"Built a talent marketplace platform with similar requirements\"",
+    "      ],",
+    "      \"interviewQuestions\": [",
+    "        \"Walk me through the architecture of your most recent AI integration project.\",",
+    "        \"How have you handled scalability challenges in Node.js microservices?\",",
+    "        \"Describe a time you led a team through a complex technical migration.\"",
+    "      ],",
+    "      \"skillGapAnalysis\": {",
+    "        \"matched\": [\"Node.js\", \"PostgreSQL\", \"TypeScript\"],",
+    "        \"missing\": [\"GraphQL\"],",
+    "        \"bonus\": [\"Rust\", \"Go\"]",
+    "      }",
+    "    }",
+    "  ]",
+    "}",
+    "",
+    "IMPORTANT:",
+    "- recommendation must be one of: \"Strongly Recommended\", \"Recommended\", \"Consider\", \"Not Recommended\"",
+    "- matchScore must be between 0 and 100",
+    "- strengths: 3-5 specific bullet points",
+    "- gaps: 1-3 honest gaps",
+    "- confidence must be between 0 and 100 and reflect how well the profile supports the score",
+    "- evidence must include 2-4 short, specific facts grounded in the profile data",
+    "- interviewQuestions: exactly 3 tailored questions",
+    "- Output ONLY the JSON object above, nothing else",
+  ].join("\n");
 
-${jobBlock}
-
-CANDIDATES TO EVALUATE (${candidates.length} total):
-${candidatesBlock}
-
-SCORING INSTRUCTIONS:
-1. Build on the preScore (deterministic algorithmic score) — adjust up or down based on qualitative signals
-2. Consider: depth of relevant experience, quality of projects, role-tech stack alignment, communication from headline
-3. Be SPECIFIC — reference actual data from profiles, not generic statements
-4. Be HONEST about gaps — do not inflate scores
-5. Produce a ranked shortlist of the TOP ${shortlistSize} candidates
-
-RETURN ONLY valid JSON in this exact structure (no markdown, no extra text):
-
-{
-  "shortlist": [
-    {
-      "candidateId": "<id from profile>",
-      "candidateName": "<full name>",
-      "email": "<email>",
-      "rank": 1,
-      "matchScore": 88,
-      "breakdown": {
-        "skillsScore": 92,
-        "experienceScore": 85,
-        "educationScore": 78,
-        "projectsScore": 90,
-        "availabilityScore": 100
-      },
-      "strengths": [
-        "5 years Node.js with microservices at scale",
-        "Led AI integration project using Gemini API",
-        "Open source contributor with 200+ GitHub stars"
-      ],
-      "gaps": [
-        "No direct experience with GraphQL (nice-to-have)",
-        "Location may require relocation for on-site roles"
-      ],
-      "recommendation": "Strongly Recommended",
-      "summary": "Alice is a strong match with 5+ years of relevant Node.js experience, proven AI project delivery, and immediate availability. Her skill set directly covers 90% of required technologies.",
-      "interviewQuestions": [
-        "Walk me through the architecture of your most recent AI integration project.",
-        "How have you handled scalability challenges in Node.js microservices?",
-        "Describe a time you led a team through a complex technical migration."
-      ],
-      "skillGapAnalysis": {
-        "matched": ["Node.js", "PostgreSQL", "TypeScript"],
-        "missing": ["GraphQL"],
-        "bonus": ["Rust", "Go"]
-      }
-    }
-  ]
-}
-
-IMPORTANT:
-- recommendation must be one of: "Strongly Recommended", "Recommended", "Consider", "Not Recommended"
-- matchScore must be between 0 and 100
-- strengths: 3-5 specific bullet points
-- gaps: 1-3 honest gaps
-- interviewQuestions: exactly 3 tailored questions
-- Output ONLY the JSON object above, nothing else`;
 }
 
 // ─── Main screening orchestrator ──────────────────────────────────────────────
@@ -180,7 +286,6 @@ export async function screenCandidates(
   shortlistSize: number = 10
 ): Promise<Omit<ScreeningResult, "_id">> {
   const startTime = Date.now();
-  const model = getModel();
 
   // Step 1: Deterministic pre-scoring for ALL candidates
   const prescored = candidates.map(c => {
@@ -196,6 +301,15 @@ export async function screenCandidates(
     .sort((a, b) => b.compositeScore - a.compositeScore)
     .slice(0, maxForAI);
 
+  const fallback = () => buildFallbackResult(job, prescored, shortlistSize, startTime);
+
+  let model;
+  try {
+    model = getModel();
+  } catch {
+    return fallback();
+  }
+
   // Step 3: Run AI in batches
   let allScores: CandidateScore[] = [];
 
@@ -206,32 +320,49 @@ export async function screenCandidates(
 
   if (batches.length === 1) {
     // Single batch
-    const summaries = batches[0].map(({ candidate, compositeScore, breakdown }) =>
-      buildCandidateSummary(candidate, compositeScore, breakdown)
-    );
-    const prompt = buildScreeningPrompt(job, summaries, shortlistSize);
-    const result = await model.generateContent(prompt);
-    const text = extractJSON(result.response.text());
-    const parsed = JSON.parse(text);
-    allScores = mergeScores(parsed.shortlist, topPrescored);
+    try {
+      const summaries = batches[0].map(({ candidate, compositeScore, breakdown }) =>
+        buildCandidateSummary(candidate, compositeScore, breakdown)
+      );
+      const prompt = buildScreeningPrompt(job, summaries, shortlistSize);
+      const result = await model.generateContent(prompt);
+      const text = extractJSON(result.response.text());
+      const parsed = JSON.parse(text);
+      allScores = mergeScores(parsed.shortlist, topPrescored);
+    } catch (error) {
+      if (isGeminiQuotaError(error)) {
+        return fallback();
+      }
+      throw error;
+    }
   } else {
     // Multi-batch: collect top from each, then final re-rank
     const batchTopSize = Math.ceil(shortlistSize * 1.5);
 
-    const batchResults = await Promise.all(
-      batches.map(async batch => {
-        const summaries = batch.map(({ candidate, compositeScore, breakdown }) =>
-          buildCandidateSummary(candidate, compositeScore, breakdown)
-        );
-        const prompt = buildScreeningPrompt(job, summaries, batchTopSize);
-        const result = await model.generateContent(prompt);
-        const text = extractJSON(result.response.text());
-        const parsed = JSON.parse(text);
-        return mergeScores(parsed.shortlist, batch);
-      })
-    );
+    let batchResults: CandidateScore[];
+    try {
+      batchResults = (
+        await Promise.all(
+          batches.map(async batch => {
+            const summaries = batch.map(({ candidate, compositeScore, breakdown }) =>
+              buildCandidateSummary(candidate, compositeScore, breakdown)
+            );
+            const prompt = buildScreeningPrompt(job, summaries, batchTopSize);
+            const result = await model.generateContent(prompt);
+            const text = extractJSON(result.response.text());
+            const parsed = JSON.parse(text);
+            return mergeScores(parsed.shortlist, batch);
+          })
+        )
+      ).flat();
+    } catch (error) {
+      if (isGeminiQuotaError(error)) {
+        return fallback();
+      }
+      throw error;
+    }
 
-    const combined = batchResults.flat().sort((a, b) => b.matchScore - a.matchScore);
+    const combined = batchResults.sort((a, b) => b.matchScore - a.matchScore);
     const top = combined.slice(0, shortlistSize * 2);
 
     // Final re-rank pass with combined top candidates
@@ -239,13 +370,20 @@ export async function screenCandidates(
       .map(s => topPrescored.find(p => p.candidate.email === s.email))
       .filter(Boolean) as typeof topPrescored;
 
-    const finalSummaries = topOriginals.map(({ candidate, compositeScore, breakdown }) =>
-      buildCandidateSummary(candidate, compositeScore, breakdown)
-    );
-    const finalPrompt = buildScreeningPrompt(job, finalSummaries, shortlistSize);
-    const finalResult = await model.generateContent(finalPrompt);
-    const finalText = extractJSON(finalResult.response.text());
-    allScores = mergeScores(JSON.parse(finalText).shortlist, topOriginals);
+    try {
+      const finalSummaries = topOriginals.map(({ candidate, compositeScore, breakdown }) =>
+        buildCandidateSummary(candidate, compositeScore, breakdown)
+      );
+      const finalPrompt = buildScreeningPrompt(job, finalSummaries, shortlistSize);
+      const finalResult = await model.generateContent(finalPrompt);
+      const finalText = extractJSON(finalResult.response.text());
+      allScores = mergeScores(JSON.parse(finalText).shortlist, topOriginals);
+    } catch (error) {
+      if (isGeminiQuotaError(error)) {
+        return fallback();
+      }
+      throw error;
+    }
   }
 
   // Step 4: Normalize ranks
@@ -266,6 +404,10 @@ export async function screenCandidates(
     aiModel: MODEL,
     processingTimeMs: Date.now() - startTime,
     screeningDate: new Date().toISOString(),
+    status: "completed",
+    progress: 100,
+    startedAt: new Date(startTime).toISOString(),
+    completedAt: new Date().toISOString(),
     poolInsights,
   };
 }
@@ -292,6 +434,11 @@ function mergeScores(
       breakdown: ai.breakdown ?? match?.breakdown ?? { skillsScore: 0, experienceScore: 0, educationScore: 0, projectsScore: 0, availabilityScore: 0 },
       strengths: ai.strengths ?? [],
       gaps: ai.gaps ?? [],
+      evidence: ai.evidence ?? [
+        `Pre-score ${match?.compositeScore ?? 0}/100 provided the initial ranking signal`,
+        `Profile data matched ${match?.skillGap.matched.length ?? 0} required skills`,
+      ],
+      confidence: ai.confidence ?? Math.min(95, Math.max(50, match?.compositeScore ?? 0)),
       recommendation: ai.recommendation ?? "Consider",
       summary: ai.summary ?? "",
       interviewQuestions: ai.interviewQuestions ?? [],

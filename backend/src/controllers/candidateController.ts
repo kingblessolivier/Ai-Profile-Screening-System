@@ -7,6 +7,44 @@ import { Candidate } from "../models/Candidate";
 import { parseResumeToProfile } from "../services/geminiService";
 import { TalentProfile } from "../types";
 
+function normalizeText(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function toSkillSet(profile: { skills?: { name: string }[]; experience?: { technologies?: string[] }[]; projects?: { technologies?: string[] }[] }) {
+  const values = [
+    ...(profile.skills ?? []).map((skill) => skill.name),
+    ...(profile.experience ?? []).flatMap((entry) => entry.technologies ?? []),
+    ...(profile.projects ?? []).flatMap((entry) => entry.technologies ?? []),
+  ];
+  return new Set(values.map(normalizeText).filter(Boolean));
+}
+
+async function flagPotentialDuplicate(candidateId: string, profile: TalentProfile) {
+  const others = await Candidate.find({ _id: { $ne: candidateId } }).select("firstName lastName email location skills experience projects");
+  const targetName = normalizeText(`${profile.firstName} ${profile.lastName}`);
+  const targetSkills = toSkillSet(profile);
+
+  let duplicateOf: string | undefined;
+  for (const other of others) {
+    const otherName = normalizeText(`${other.firstName} ${other.lastName}`);
+    const sameName = otherName === targetName;
+    const sameEmailLocalPart = normalizeText(other.email.split("@")[0]) === normalizeText(profile.email.split("@")[0]);
+    const sameLocation = normalizeText(other.location) === normalizeText(profile.location);
+    const otherSkills = toSkillSet(other as unknown as TalentProfile);
+    const overlap = [...targetSkills].filter((skill) => otherSkills.has(skill)).length;
+
+    if (sameName || sameEmailLocalPart || (sameLocation && overlap >= 2)) {
+      duplicateOf = String(other._id);
+      break;
+    }
+  }
+
+  if (duplicateOf) {
+    await Candidate.findByIdAndUpdate(candidateId, { potentialDuplicate: true, duplicateOf });
+  }
+}
+
 export async function getCandidates(req: Request, res: Response): Promise<void> {
   try {
     const { source, search, page = "1", limit = "20" } = req.query;
@@ -48,8 +86,18 @@ export async function getCandidate(req: Request, res: Response): Promise<void> {
 
 export async function createCandidate(req: Request, res: Response): Promise<void> {
   try {
-    const candidate = await Candidate.create({ ...req.body, source: "platform" });
-    res.status(201).json(candidate);
+    const jobIds = Array.isArray(req.body.jobIds)
+      ? req.body.jobIds
+      : req.body.jobId
+        ? [req.body.jobId]
+        : undefined;
+    const candidate = await Candidate.create({
+      ...req.body,
+      ...(jobIds ? { jobIds } : {}),
+      source: "platform",
+    });
+    void flagPotentialDuplicate(String(candidate._id), candidate as unknown as TalentProfile);
+    res.status(201).json({ _id: candidate._id });
   } catch (err) {
     res.status(400).json({ message: "Failed to create candidate", error: String(err) });
   }
@@ -58,19 +106,29 @@ export async function createCandidate(req: Request, res: Response): Promise<void
 export async function bulkCreateCandidates(req: Request, res: Response): Promise<void> {
   try {
     const profiles: TalentProfile[] = req.body.candidates;
+    const jobIds = Array.isArray(req.body.jobIds)
+      ? req.body.jobIds
+      : req.body.jobId
+        ? [req.body.jobId]
+        : undefined;
     if (!Array.isArray(profiles) || profiles.length === 0) {
       res.status(400).json({ message: "candidates array is required" });
       return;
     }
     // Upsert by email to avoid duplicates
-    const ops = profiles.map((p) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ops: any[] = profiles.map((p) => ({
       updateOne: {
         filter: { email: p.email },
-        update: { $set: { ...p, source: "platform" } },
+        update: { $set: { ...p, ...(jobIds ? { jobIds } : {}), source: "platform" as const } },
         upsert: true,
       },
     }));
     const result = await Candidate.bulkWrite(ops);
+    await Promise.all(profiles.map(async (p) => {
+      const updated = await Candidate.findOne({ email: p.email });
+      if (updated) await flagPotentialDuplicate(String(updated._id), updated as unknown as TalentProfile);
+    }));
     res.status(201).json({
       message: `${result.upsertedCount} created, ${result.modifiedCount} updated`,
       total: profiles.length,
@@ -109,11 +167,14 @@ export async function uploadPDFResumes(req: Request, res: Response): Promise<voi
         if (!profile.email || !profile.firstName) {
           results.push({ file: file.originalname, status: "skipped", error: "Could not extract name/email" });
         } else {
+          const jobIds = req.body.jobId ? [req.body.jobId] : undefined;
           await Candidate.findOneAndUpdate(
             { email: profile.email },
-            { $set: { ...profile, source: "pdf", rawText } },
+            { $set: { ...profile, ...(jobIds ? { jobIds } : {}), source: "pdf", rawText } },
             { upsert: true, new: true }
           );
+          const saved = await Candidate.findOne({ email: profile.email });
+          if (saved) void flagPotentialDuplicate(String(saved._id), saved as unknown as TalentProfile);
           results.push({ file: file.originalname, status: "imported", email: profile.email });
         }
       } catch (e) {
@@ -172,11 +233,13 @@ export async function uploadCSV(req: Request, res: Response): Promise<void> {
         status: (row.availability as TalentProfile["availability"]["status"]) || "Available",
         type: (row.type as TalentProfile["availability"]["type"]) || "Full-time",
       },
+      jobIds: req.body.jobId ? [req.body.jobId] : undefined,
       source: "csv" as const,
     }));
 
     const valid = profiles.filter((p) => p.email && p.firstName);
-    const ops = valid.map((p) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ops: any[] = valid.map((p) => ({
       updateOne: {
         filter: { email: p.email },
         update: { $set: p },
@@ -185,6 +248,10 @@ export async function uploadCSV(req: Request, res: Response): Promise<void> {
     }));
 
     const result = await Candidate.bulkWrite(ops);
+    await Promise.all(valid.map(async (p) => {
+      const updated = await Candidate.findOne({ email: p.email });
+      if (updated) await flagPotentialDuplicate(String(updated._id), updated as unknown as TalentProfile);
+    }));
     res.json({
       message: `CSV imported: ${result.upsertedCount} created, ${result.modifiedCount} updated`,
       total: valid.length,

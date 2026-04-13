@@ -7,23 +7,124 @@ import { AppDispatch, RootState } from "@/store";
 import { fetchJobs } from "@/store/jobsSlice";
 import { fetchCandidates } from "@/store/candidatesSlice";
 import { runScreening } from "@/store/screeningSlice";
-import { Zap, Loader2, AlertCircle, CheckCircle, Users, Briefcase } from "lucide-react";
+import {
+  Zap, Loader2, AlertCircle, CheckCircle, Users, Briefcase,
+  Brain, Sparkles, ChevronDown, ChevronUp, MapPin, ArrowRight,
+} from "lucide-react";
+
+const AI_STEPS = [
+  {
+    step: 1,
+    title: "Pre-scoring candidates",
+    desc: "Skills 40% · Experience 25% · Projects 15% · Education 10% · Availability 10%",
+  },
+  {
+    step: 2,
+    title: "Sending top matches to Gemini",
+    desc: "Strongest candidates forwarded for deep qualitative analysis",
+  },
+  {
+    step: 3,
+    title: "Generating AI rankings",
+    desc: "Gemini returns strengths, gaps, evidence & interview questions",
+  },
+  {
+    step: 4,
+    title: "Preparing your shortlist",
+    desc: "Results structured and stored — ready for recruiter review",
+  },
+];
+
+function StepRow({
+  step, title, desc, state,
+}: {
+  step: number; title: string; desc: string; state: "done" | "active" | "pending";
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      {/* Icon */}
+      <div className="flex flex-col items-center flex-shrink-0">
+        <div
+          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all"
+          style={
+            state === "done"
+              ? { background: "#059669", color: "#fff" }
+              : state === "active"
+              ? { background: "#2563eb", color: "#fff", boxShadow: "0 0 0 4px rgba(37,99,235,0.18)" }
+              : { background: "var(--surface-inset)", color: "var(--text-muted)", border: "1px solid var(--border)" }
+          }
+        >
+          {state === "done" ? <CheckCircle className="w-3.5 h-3.5" /> : step}
+        </div>
+        {step < 4 && (
+          <div
+            className="w-px flex-1 mt-1"
+            style={{
+              height: "24px",
+              background: state === "done" ? "#059669" : "var(--border)",
+              opacity: state === "done" ? 0.6 : 0.4,
+            }}
+          />
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="pb-4 flex-1 min-w-0">
+        <p
+          className="text-sm font-semibold leading-tight"
+          style={{
+            color: state === "done"
+              ? "#059669"
+              : state === "active"
+              ? "var(--text-primary)"
+              : "var(--text-muted)",
+          }}
+        >
+          {title}
+          {state === "active" && (
+            <span className="inline-flex items-center gap-0.5 ml-2 align-middle">
+              <span className="w-1 h-1 rounded-full bg-blue-500 dot-1 inline-block" />
+              <span className="w-1 h-1 rounded-full bg-blue-500 dot-2 inline-block" />
+              <span className="w-1 h-1 rounded-full bg-blue-500 dot-3 inline-block" />
+            </span>
+          )}
+        </p>
+        <p className="text-xs mt-0.5" style={{ color: state === "pending" ? "var(--text-muted)" : "var(--text-secondary)" }}>
+          {desc}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function ScreeningPage() {
-  const dispatch = useDispatch<AppDispatch>();
-  const router = useRouter();
+  const dispatch     = useDispatch<AppDispatch>();
+  const router       = useRouter();
   const searchParams = useSearchParams();
-  const { items: jobs } = useSelector((s: RootState) => s.jobs);
-  const { items: candidates, total } = useSelector((s: RootState) => s.candidates);
-  const { loading, error } = useSelector((s: RootState) => s.screening);
+  const { items: jobs }             = useSelector((s: RootState) => s.jobs);
+  const { total }                   = useSelector((s: RootState) => s.candidates);
+  const { loading, error }          = useSelector((s: RootState) => s.screening);
 
-  const [jobId, setJobId] = useState(searchParams.get("jobId") || "");
+  const [jobId, setJobId]               = useState(searchParams.get("jobId") || "");
   const [shortlistSize, setShortlistSize] = useState(10);
+  const [activeStep, setActiveStep]     = useState(0);
+  const [showThinking, setShowThinking] = useState(false);
 
   useEffect(() => {
     dispatch(fetchJobs());
     dispatch(fetchCandidates());
   }, [dispatch]);
+
+  useEffect(() => {
+    if (!loading) { setActiveStep(0); return; }
+    setActiveStep(1);
+    const timers = [
+      setTimeout(() => setActiveStep(2), 4000),
+      setTimeout(() => setActiveStep(3), 12000),
+      setTimeout(() => setActiveStep(4), 22000),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, [loading]);
 
   const selectedJob = jobs.find((j) => j._id === jobId);
 
@@ -36,135 +137,365 @@ export default function ScreeningPage() {
     }
   };
 
+  const canRun = !loading && !!jobId && total > 0;
+
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900">AI Screening</h1>
-        <p className="text-slate-500 mt-1">Let Gemini AI rank and explain candidate matches</p>
-      </div>
+    <div className="max-w-5xl mx-auto animate-slide-up">
 
-      {/* Status cards */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center">
-            <Briefcase className="w-4 h-4 text-blue-600" />
+      {/* ── Page Header ──────────────────────────────────────────────────────── */}
+      <div className="flex items-start justify-between mb-8 gap-6">
+        <div>
+          <p className="text-xs font-semibold tracking-widest uppercase mb-1"
+            style={{ color: "var(--ai)" }}>
+            AI Engine
+          </p>
+          <h1 className="text-3xl font-bold mb-1"
+            style={{ color: "var(--text-primary)", fontFamily: "var(--font-display, system-ui)" }}>
+            Run AI Screening
+          </h1>
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            Gemini 2.0 Flash ranks every candidate and generates evidence-backed shortlists
+          </p>
+        </div>
+
+        {/* Live pool counter */}
+        <div className="hidden md:flex items-center gap-3 flex-shrink-0">
+          <div className="card px-4 py-2.5 flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+              style={{ background: "var(--accent-light)" }}>
+              <Briefcase className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} />
+            </div>
+            <div>
+              <p className="text-base font-bold leading-none" style={{ color: "var(--text-primary)" }}>
+                {jobs.length}
+              </p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>Jobs</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xl font-bold text-slate-900">{jobs.length}</p>
-            <p className="text-xs text-slate-500">Jobs available</p>
+          <div className="card px-4 py-2.5 flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+              style={{ background: "var(--success-light)" }}>
+              <Users className="w-3.5 h-3.5" style={{ color: "var(--success)" }} />
+            </div>
+            <div>
+              <p className="text-base font-bold leading-none" style={{ color: "var(--text-primary)" }}>
+                {total}
+              </p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>Candidates</p>
+            </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
-            <Users className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div>
-            <p className="text-xl font-bold text-slate-900">{total}</p>
-            <p className="text-xs text-slate-500">Candidates in pool</p>
-          </div>
-        </div>
       </div>
 
+      {/* ── Error banner ─────────────────────────────────────────────────────── */}
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-red-700">
+        <div className="mb-6 p-4 rounded-xl flex items-start gap-3 text-sm"
+          style={{ background: "var(--error-light)", border: "1px solid var(--error-border)", color: "var(--error)" }}>
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium">Screening failed</p>
-            <p className="text-sm mt-0.5">{error}</p>
+            <p className="font-semibold">Screening failed</p>
+            <p className="mt-0.5 text-xs opacity-80">{error}</p>
           </div>
         </div>
       )}
 
-      <form onSubmit={handleRun} className="space-y-5">
-        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Select Job *</label>
-            {jobs.length === 0 ? (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-                No jobs found. <a href="/jobs/new" className="font-medium underline">Post a job first</a>.
-              </div>
-            ) : (
-              <select required value={jobId} onChange={(e) => setJobId(e.target.value)}
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">— Select a job opening —</option>
-                {jobs.map((j) => (
-                  <option key={j._id} value={j._id}>{j.title} · {j.experienceLevel} · {j.location}</option>
-                ))}
-              </select>
-            )}
-          </div>
+      {/* ── Two-column layout ─────────────────────────────────────────────────── */}
+      <form onSubmit={handleRun}>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-5">
 
-          {selectedJob && (
-            <div className="p-4 bg-slate-50 rounded-lg text-sm space-y-2">
-              <p className="font-medium text-slate-700">{selectedJob.title}</p>
-              <div className="flex flex-wrap gap-1.5">
-                {selectedJob.requirements.slice(0, 6).map((r) => (
-                  <span key={r.skill} className={`text-xs px-2 py-0.5 rounded-full ${r.required ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-600"}`}>
-                    {r.skill}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* ── LEFT: Configuration (3/5) ──────────────────────────────────── */}
+          <div className="lg:col-span-3 space-y-4">
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Shortlist size — top <span className="text-blue-600 font-semibold">{shortlistSize}</span> candidates
-            </label>
-            <input type="range" min="5" max="20" step="5" value={shortlistSize} onChange={(e) => setShortlistSize(Number(e.target.value))}
-              className="w-full accent-blue-600" />
-            <div className="flex justify-between text-xs text-slate-400 mt-1">
-              <span>Top 5</span><span>Top 10</span><span>Top 15</span><span>Top 20</span>
-            </div>
-          </div>
+            {/* Job selector card */}
+            <div className="card p-6">
+              <p className="text-xs font-bold tracking-widest uppercase mb-4"
+                style={{ color: "var(--text-muted)" }}>
+                Step 1 — Select Job
+              </p>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Candidate Pool</label>
-            <div className="p-3 bg-slate-50 rounded-lg text-sm text-slate-600">
-              All <strong className="text-slate-800">{total}</strong> candidates in the database will be screened.
-              {total === 0 && (
-                <span className="text-amber-600 ml-1">
-                  No candidates yet — <a href="/candidates/upload" className="underline font-medium">import some first</a>.
-                </span>
+              {jobs.length === 0 ? (
+                <div className="p-4 rounded-xl text-sm flex items-start gap-3"
+                  style={{ background: "var(--warning-light)", border: "1px solid var(--warning-border)", color: "var(--warning)" }}>
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>No jobs found. <a href="/jobs/new" className="font-semibold underline">Post a job first</a></span>
+                </div>
+              ) : (
+                <div className="relative">
+                  <select
+                    required
+                    value={jobId}
+                    onChange={(e) => setJobId(e.target.value)}
+                    className="w-full px-4 py-3 pr-10 rounded-xl text-sm font-medium focus:outline-none transition-all appearance-none"
+                    style={{
+                      background: jobId ? "var(--accent-light)" : "var(--surface-inset)",
+                      border: `1px solid ${jobId ? "var(--accent-border)" : "var(--border)"}`,
+                      color: jobId ? "var(--accent)" : "var(--text-secondary)",
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "var(--accent)";
+                      e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,0.12)";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = jobId ? "var(--accent-border)" : "var(--border)";
+                      e.currentTarget.style.boxShadow = "none";
+                    }}
+                  >
+                    <option value="">— Choose a job opening —</option>
+                    {jobs.map((j) => (
+                      <option key={j._id} value={j._id}>
+                        {j.title} · {j.experienceLevel} · {j.location}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+                    style={{ color: "var(--text-muted)" }} />
+                </div>
+              )}
+
+              {/* Selected job preview */}
+              {selectedJob && (
+                <div className="mt-4 p-4 rounded-xl space-y-3"
+                  style={{ background: "var(--surface-inset)", border: "1px solid var(--border)" }}>
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: "var(--accent-light)" }}>
+                      <Briefcase className="w-4 h-4" style={{ color: "var(--accent)" }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
+                        {selectedJob.title}
+                      </p>
+                      <div className="flex items-center gap-3 text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                        <span className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />{selectedJob.location}
+                        </span>
+                        <span>{selectedJob.experienceLevel}</span>
+                        <span>{selectedJob.type}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedJob.requirements.slice(0, 8).map((r) => (
+                      <span key={r.skill} className="text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={
+                          r.required
+                            ? { background: "var(--accent-light)", color: "var(--accent)" }
+                            : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }
+                        }>
+                        {r.skill}{r.required && <span className="opacity-50 ml-0.5">*</span>}
+                      </span>
+                    ))}
+                    {selectedJob.requirements.length > 8 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full"
+                        style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+                        +{selectedJob.requirements.length - 8} more
+                      </span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
+
+            {/* Shortlist config card */}
+            <div className="card p-6">
+              <p className="text-xs font-bold tracking-widest uppercase mb-4"
+                style={{ color: "var(--text-muted)" }}>
+                Step 2 — Configure Shortlist
+              </p>
+
+              {/* Shortlist size */}
+              <div className="mb-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      Shortlist Size
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                      How many top candidates to return
+                    </p>
+                  </div>
+                  <div className="px-4 py-1.5 rounded-xl font-bold text-sm text-white"
+                    style={{ background: "linear-gradient(135deg, #0284c7, #2563eb)" }}>
+                    Top {shortlistSize}
+                  </div>
+                </div>
+                <input
+                  type="range" min="5" max="20" step="5"
+                  value={shortlistSize}
+                  onChange={(e) => setShortlistSize(Number(e.target.value))}
+                  className="w-full"
+                  style={{ accentColor: "var(--accent)" }}
+                />
+                <div className="flex justify-between text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
+                  {[5, 10, 15, 20].map((n) => (
+                    <span key={n} className={shortlistSize === n ? "font-bold" : ""}
+                      style={{ color: shortlistSize === n ? "var(--accent)" : "var(--text-muted)" }}>
+                      {n}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Candidate pool */}
+              <div className="flex items-center justify-between p-3 rounded-xl"
+                style={{ background: "var(--surface-inset)", border: "1px solid var(--border)" }}>
+                <div className="flex items-center gap-2.5">
+                  <Users className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+                  <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                    Candidate pool
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {total === 0 ? (
+                    <a href="/candidates/upload" className="text-xs font-semibold underline"
+                      style={{ color: "var(--warning)" }}>
+                      Import candidates first
+                    </a>
+                  ) : (
+                    <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+                      {total} candidate{total !== 1 ? "s" : ""} will be evaluated
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── RIGHT: Context panel (2/5) ─────────────────────────────────── */}
+          <div className="lg:col-span-2">
+            {loading ? (
+              /* ── AI Processing (replaces right panel during run) ── */
+              <div className="card overflow-hidden h-full animate-fade-in">
+                {/* Header strip */}
+                <div className="px-5 pt-5 pb-4"
+                  style={{ background: "linear-gradient(135deg, #0a1628, #0e2047)" }}>
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center animate-ai-pulse"
+                      style={{ background: "rgba(59,130,246,0.25)", border: "1px solid rgba(59,130,246,0.4)" }}>
+                      <Brain className="w-4.5 h-4.5 text-white" style={{ width: "18px", height: "18px" }} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-white">Gemini is thinking</p>
+                      <p className="text-xs" style={{ color: "#60a5fa" }}>30–60 seconds typical</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowThinking((v) => !v)}
+                      className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
+                      style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)" }}
+                    >
+                      {showThinking ? "Hide" : "Show"} thinking
+                      {showThinking ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {showThinking ? (
+                  /* Steps */
+                  <div className="p-5">
+                    {AI_STEPS.map((s) => (
+                      <StepRow
+                        key={s.step}
+                        step={s.step}
+                        title={s.title}
+                        desc={s.desc}
+                        state={
+                          activeStep > s.step ? "done"
+                          : activeStep === s.step ? "active"
+                          : "pending"
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-5">
+                    <div className="p-4 rounded-xl" style={{ background: "var(--surface-inset)", border: "1px solid var(--border)" }}>
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center animate-ai-pulse"
+                          style={{ background: "rgba(59,130,246,0.14)" }}>
+                          <Brain className="w-4 h-4" style={{ color: "var(--ai)" }} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                            AI is ready to think out loud
+                          </p>
+                          <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+                            Click Show thinking while screening runs to see pre-scoring, Gemini analysis, and shortlist preparation.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* ── AI Info panel (collapsed by default) ── */
+              <div className="card overflow-hidden h-full flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => setShowThinking((v) => !v)}
+                  className="w-full px-5 pt-5 pb-4 flex-shrink-0 text-left"
+                  style={{ background: "linear-gradient(135deg, #0a1628, #0e2047)" }}
+                >
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <Brain className="w-4 h-4 text-white opacity-90" />
+                    <p className="font-bold text-sm text-white">See how AI thinks</p>
+                    <span className="ml-auto inline-flex items-center gap-1 text-xs text-white/80">
+                      {showThinking ? "Hide" : "Show"}
+                      {showThinking ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
+                  </div>
+                  <p className="text-xs" style={{ color: "#60a5fa" }}>
+                    Gemini 2.0 Flash · Deterministic pre-scoring
+                  </p>
+                </button>
+
+                {showThinking && (
+                  <>
+                    <div className="p-5 flex-1">
+                      {AI_STEPS.map((s) => (
+                        <StepRow key={s.step} step={s.step} title={s.title} desc={s.desc} state="pending" />
+                      ))}
+                    </div>
+
+                    <div className="px-5 pb-5 flex-shrink-0">
+                      <div className="p-3 rounded-xl text-xs"
+                        style={{ background: "var(--ai-light)", border: "1px solid var(--ai-border)", color: "var(--ai)" }}>
+                        <strong>Human decision first.</strong> AI ranks and explains — you make the final call.
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* AI explanation */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-            <Zap className="w-4 h-4 text-violet-600" /> How AI Screening Works
-          </h3>
-          <ol className="space-y-2 text-sm text-slate-600">
-            {[
-              "Deterministic engine pre-scores all candidates (skills 40%, experience 25%, projects 15%, education 10%, availability 10%)",
-              "Top candidates sent to Gemini 2.0 Flash for deep qualitative analysis",
-              "Gemini returns ranked shortlist with strengths, gaps, interview questions, and skill gap analysis",
-              "Results stored and presented for recruiter review — humans make the final decision",
-            ].map((step, i) => (
-              <li key={i} className="flex items-start gap-3">
-                <span className="w-5 h-5 rounded-full bg-violet-100 text-violet-700 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                {step}
-              </li>
-            ))}
-          </ol>
-        </div>
-
+        {/* ── Submit button ─────────────────────────────────────────────────── */}
         <button
           type="submit"
-          disabled={loading || !jobId || total === 0}
-          className="w-full py-4 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 disabled:text-slate-500 text-white rounded-xl font-semibold text-lg flex items-center justify-center gap-3 transition-colors"
+          disabled={!canRun}
+          className="w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-3 text-white transition-all"
+          style={
+            !canRun
+              ? { background: "var(--surface-inset)", color: "var(--text-muted)", cursor: "not-allowed", border: "1px solid var(--border)" }
+              : { background: "linear-gradient(135deg, #0a1628 0%, #0e2047 40%, #2563eb 100%)" }
+          }
+          onMouseEnter={(e) => {
+            if (canRun) e.currentTarget.style.boxShadow = "0 8px 24px rgba(37,99,235,0.35)";
+          }}
+          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; }}
         >
           {loading ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
-              AI is screening candidates... (this may take 30–60 seconds)
+              Screening in progress — this may take 30–60 seconds
             </>
           ) : (
             <>
-              <Zap className="w-5 h-5" />
+              <Sparkles className="w-5 h-5" />
               Run AI Screening
+              {canRun && <ArrowRight className="w-4 h-4 ml-1 opacity-70" />}
             </>
           )}
         </button>

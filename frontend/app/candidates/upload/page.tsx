@@ -1,22 +1,30 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { useDispatch } from "react-redux";
+import { useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch } from "@/store";
 import { seedDummyData } from "@/store/candidatesSlice";
+import { fetchJobs } from "@/store/jobsSlice";
 import { DUMMY_CANDIDATES } from "@/lib/dummyData";
 import api from "@/lib/api";
 import { Upload, FileText, Table, Database, CheckCircle, Loader2, AlertCircle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { RootState } from "@/store";
 
 export default function UploadPage() {
   const dispatch = useDispatch<AppDispatch>();
+  const { items: jobs } = useSelector((s: RootState) => s.jobs);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [csvLoading, setCsvLoading] = useState(false);
   const [seedLoading, setSeedLoading] = useState(false);
+  const [jobId, setJobId] = useState("");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const pdfRef = useRef<HTMLInputElement>(null);
   const csvRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    dispatch(fetchJobs());
+  }, [dispatch]);
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -30,6 +38,7 @@ export default function UploadPage() {
     try {
       const form = new FormData();
       Array.from(files).forEach((f) => form.append("resumes", f));
+      if (jobId) form.append("jobId", jobId);
       const { data } = await api.post("/candidates/upload/pdf", form, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -50,6 +59,7 @@ export default function UploadPage() {
     try {
       const form = new FormData();
       form.append("file", file);
+      if (jobId) form.append("jobId", jobId);
       const { data } = await api.post("/candidates/upload/csv", form, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -65,7 +75,7 @@ export default function UploadPage() {
   const handleSeed = async () => {
     setSeedLoading(true);
     try {
-      await dispatch(seedDummyData(DUMMY_CANDIDATES)).unwrap();
+      await dispatch(seedDummyData({ candidates: DUMMY_CANDIDATES, jobId: jobId || undefined })).unwrap();
       showMsg("success", `${DUMMY_CANDIDATES.length} demo candidates seeded successfully!`);
     } catch {
       showMsg("error", "Failed to seed demo data.");
@@ -86,6 +96,17 @@ export default function UploadPage() {
         </div>
       </div>
 
+      <div className="mb-6 bg-white rounded-xl border border-slate-200 p-4">
+        <label className="block text-sm font-medium text-slate-700 mb-1">Assign imported candidates to a job</label>
+        <select value={jobId} onChange={(e) => setJobId(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">Global pool for all jobs</option>
+          {jobs.map((job) => (
+            <option key={job._id} value={job._id}>{job.title} · {job.location}</option>
+          ))}
+        </select>
+        <p className="text-xs text-slate-500 mt-2">If you pick a job here, uploaded and seeded candidates are tagged to that job and screening will prefer that pool.</p>
+      </div>
+
       {message && (
         <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 ${message.type === "success" ? "bg-emerald-50 border border-emerald-200 text-emerald-800" : "bg-red-50 border border-red-200 text-red-800"}`}>
           {message.type === "success" ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 flex-shrink-0" />}
@@ -97,8 +118,8 @@ export default function UploadPage() {
         {/* PDF Upload */}
         <div className="bg-white rounded-xl border border-slate-200 p-6">
           <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
-              <FileText className="w-5 h-5 text-violet-600" />
+            <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+              <FileText className="w-5 h-5 text-blue-600" />
             </div>
             <div className="flex-1">
               <h2 className="font-semibold text-slate-800 mb-1">Upload PDF Resumes</h2>
@@ -109,7 +130,7 @@ export default function UploadPage() {
               <button
                 onClick={() => pdfRef.current?.click()}
                 disabled={pdfLoading}
-                className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-slate-300 hover:border-violet-400 hover:bg-violet-50 rounded-lg text-sm font-medium text-slate-600 hover:text-violet-700 transition-all disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2.5 border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 rounded-lg text-sm font-medium text-slate-600 hover:text-blue-700 transition-all disabled:opacity-50"
               >
                 {pdfLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 {pdfLoading ? "Parsing resumes with Gemini AI..." : "Choose PDF files"}

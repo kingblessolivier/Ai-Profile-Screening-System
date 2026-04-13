@@ -27,6 +27,8 @@ const CandidateScoreSchema = new Schema({
   breakdown: ScoreBreakdownSchema,
   strengths: [String],
   gaps: [String],
+  evidence: [String],
+  confidence: { type: Number, default: 0 },
   recommendation: {
     type: String,
     enum: ["Strongly Recommended", "Recommended", "Consider", "Not Recommended"],
@@ -53,6 +55,11 @@ const ScreeningResultSchema = new Schema<ScreeningResultDocument>(
     aiModel: { type: String, default: "gemini-2.0-flash" },
     processingTimeMs: { type: Number, default: 0 },
     screeningDate: { type: String, default: () => new Date().toISOString() },
+    status: { type: String, enum: ["pending", "running", "completed", "failed"], default: "pending" },
+    progress: { type: Number, default: 0 },
+    startedAt: { type: String },
+    completedAt: { type: String },
+    errorMessage: { type: String },
     poolInsights: PoolInsightsSchema,
   },
   { timestamps: true }

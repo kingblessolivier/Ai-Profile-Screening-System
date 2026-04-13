@@ -97,6 +97,9 @@ const CandidateSchema = new Schema<CandidateDocument>(
       default: "platform",
     },
     rawText: { type: String, select: false },
+    jobIds: [{ type: String, index: true }],
+    potentialDuplicate: { type: Boolean, default: false },
+    duplicateOf: { type: String },
   },
   { timestamps: true }
 );

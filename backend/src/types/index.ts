@@ -76,6 +76,9 @@ export interface TalentProfile {
   socialLinks?: SocialLinks;
   source?: "platform" | "csv" | "pdf";
   rawText?: string;
+  jobIds?: string[];
+  potentialDuplicate?: boolean;
+  duplicateOf?: string;
 }
 
 // ─── Job Schema ───────────────────────────────────────────────────────────────
@@ -132,6 +135,8 @@ export interface CandidateScore {
   breakdown: ScoreBreakdown;
   strengths: string[];
   gaps: string[];
+  evidence: string[];
+  confidence: number;
   recommendation: "Strongly Recommended" | "Recommended" | "Consider" | "Not Recommended";
   summary: string;
   interviewQuestions: string[];
@@ -148,6 +153,11 @@ export interface ScreeningResult {
   aiModel: string;
   processingTimeMs: number;
   screeningDate: string;
+  status?: "pending" | "running" | "completed" | "failed";
+  progress?: number;
+  startedAt?: string;
+  completedAt?: string;
+  errorMessage?: string;
   poolInsights?: PoolInsights;
 }
 

@@ -27,6 +27,7 @@ An intelligent recruitment screening platform that uses **Google Gemini 2.0 Flas
 | **Ranked Shortlist** | Top 10 or Top 20 with expandable detail cards |
 | **Explainable AI** | Every candidate gets: strengths, gaps, recommendation, skill gap pills, 3 interview questions |
 | **Pool Insights** | Top skills, missing critical skills, avg experience across all screened candidates |
+| **PDF Reports** | Export screening results as downloadable PDF shortlist summaries |
 | **Auth** | Email/password JWT authentication |
 
 ---
@@ -176,6 +177,8 @@ cp .env.example .env.local
 npm run dev
 ```
 
+The frontend example env file lives at [frontend/.env.example](frontend/.env.example).
+
 ---
 
 ## Environment Variables
@@ -233,6 +236,7 @@ npm run dev
 | POST | `/api/screening/run` | Trigger AI screening |
 | GET | `/api/screening` | List all results |
 | GET | `/api/screening/:id` | Get result with full shortlist |
+| GET | `/api/screening/:id/report/pdf` | Download shortlist summary as PDF |
 | GET | `/api/screening/job/:jobId/latest` | Latest result for a job |
 | DELETE | `/api/screening/:id` | Delete result |
 
@@ -256,6 +260,15 @@ npm run dev
 1. Create a free M0 cluster
 2. Whitelist `0.0.0.0/0` for Render access
 3. Copy connection string to `MONGODB_URI`
+
+---
+
+## Assumptions & Limitations
+
+- Gemini API access is mandatory for the ideal AI flow, but the app now falls back to deterministic scoring when quota is exhausted.
+- The prototype assumes recruiter-created jobs and candidate ingestion are already available in the system.
+- Resume parsing is designed for structured extraction from PDFs and CSV imports, but quality still depends on source document clarity.
+- Final hiring decisions remain human-led; the model only assists with ranking and explanation.
 
 ---
 

@@ -6,7 +6,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AppDispatch, RootState } from "@/store";
 import { login } from "@/store/authSlice";
-import { Brain, Loader2 } from "lucide-react";
+import { Brain, Loader2, Sparkles, Zap, Users, BarChart3 } from "lucide-react";
+
+const FEATURES = [
+  { icon: Brain,    title: "Gemini AI Analysis",    desc: "Deep candidate ranking with evidence-backed insights" },
+  { icon: Zap,      title: "Automated Screening",   desc: "Pre-score every candidate in seconds, not hours" },
+  { icon: Users,    title: "Talent Pool Management", desc: "Import PDF resumes, CSV batches, or add manually" },
+  { icon: BarChart3, title: "Decision Workspace",    desc: "Shortlists with scores, strengths, gaps & interview questions" },
+];
 
 export default function LoginPage() {
   const dispatch = useDispatch<AppDispatch>();
@@ -21,61 +28,96 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-6 sm:p-10" style={{ background: "var(--surface-raised)" }}>
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 rounded-xl bg-blue-600 flex items-center justify-center mx-auto mb-4">
-            <Brain className="w-6 h-6 text-white" />
+        <div className="card p-8 sm:p-10 shadow-xl">
+          <div className="flex items-center gap-3 mb-8">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: "linear-gradient(135deg, #1e40af, #0284c7)" }}
+            >
+              <Brain className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p
+                className="text-base font-bold leading-tight"
+                style={{ color: "var(--text-primary)", fontFamily: "var(--font-display, system-ui)" }}
+              >
+                TalentAI
+              </p>
+              <p className="text-xs" style={{ color: "var(--text-secondary)" }}>AI Recruiting Platform</p>
+            </div>
           </div>
-          <h1 className="text-2xl font-bold text-white">TalentAI</h1>
-          <p className="text-slate-400 mt-1">AI-powered recruitment screening</p>
-        </div>
 
-        <div className="bg-white rounded-2xl p-8 shadow-xl">
-          <h2 className="text-xl font-semibold text-slate-800 mb-6">Sign in</h2>
+          <h1
+            className="text-2xl font-bold mb-1"
+            style={{ color: "var(--text-primary)", fontFamily: "var(--font-display, system-ui)" }}
+          >
+            Welcome back
+          </h1>
+          <p className="text-sm mb-8" style={{ color: "var(--text-secondary)" }}>
+            Sign in to your recruiter account
+          </p>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+            <div
+              className="mb-5 p-3 rounded-xl text-sm"
+              style={{ background: "var(--error-light)", border: "1px solid var(--error-border)", color: "var(--error)" }}
+            >
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+              <label className="block text-sm font-semibold mb-1.5" style={{ color: "var(--text-primary)" }}>
+                Email
+              </label>
               <input
                 type="email"
                 required
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="recruiter@company.com"
+                className="w-full px-3 py-2.5 rounded-xl text-sm focus:outline-none transition-all"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,0.12)"; }}
+                onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)";  e.currentTarget.style.boxShadow = "none"; }}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+              <label className="block text-sm font-semibold mb-1.5" style={{ color: "var(--text-primary)" }}>
+                Password
+              </label>
               <input
                 type="password"
                 required
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="••••••••"
+                className="w-full px-3 py-2.5 rounded-xl text-sm focus:outline-none transition-all"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,0.12)"; }}
+                onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)";  e.currentTarget.style.boxShadow = "none"; }}
               />
             </div>
+
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors"
+              className="w-full py-3 rounded-xl font-semibold text-sm text-white flex items-center justify-center gap-2 transition-all mt-2"
+              style={loading ? { background: "#e2e8f0", color: "#94a3b8" } : { background: "linear-gradient(135deg, #2563eb, #1d4ed8)" }}
+              onMouseEnter={(e) => { if (!loading) e.currentTarget.style.boxShadow = "0 4px 14px rgba(37,99,235,0.4)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; }}
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Sign in
             </button>
           </form>
 
-          <p className="text-sm text-slate-500 mt-4 text-center">
+          <p className="text-sm text-center mt-6" style={{ color: "var(--text-secondary)" }}>
             No account?{" "}
-            <Link href="/signup" className="text-blue-600 hover:underline font-medium">
+            <Link href="/signup" className="font-semibold transition-colors" style={{ color: "var(--accent)" }}>
               Create one
             </Link>
           </p>
