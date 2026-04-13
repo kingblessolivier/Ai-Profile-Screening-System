@@ -78,25 +78,25 @@ export default function NewJobPage() {
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">Job Title *</label>
               <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="e.g., Senior Backend Engineer" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Department</label>
               <input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Engineering" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Location *</label>
               <input required value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Kigali, Rwanda / Remote" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Employment Type</label>
               <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as typeof form.type })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option>Full-time</option>
                 <option>Part-time</option>
                 <option>Contract</option>
@@ -105,7 +105,7 @@ export default function NewJobPage() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Experience Level</label>
               <select value={form.experienceLevel} onChange={(e) => setForm({ ...form, experienceLevel: e.target.value as typeof form.experienceLevel })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option>Junior</option>
                 <option>Mid-level</option>
                 <option>Senior</option>
@@ -115,7 +115,7 @@ export default function NewJobPage() {
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">Job Description *</label>
               <textarea required rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 placeholder="Describe the role, responsibilities, and ideal candidate..." />
             </div>
           </div>
@@ -126,15 +126,15 @@ export default function NewJobPage() {
           <h2 className="font-semibold text-slate-800">Required Skills</h2>
           <div className="flex gap-2 flex-wrap">
             <input value={newReq.skill} onChange={(e) => setNewReq({ ...newReq, skill: e.target.value })}
-              className="flex-1 min-w-[140px] px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              className="flex-1 min-w-[140px] px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400"
               placeholder="Skill (e.g. Node.js)" onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addRequirement())} />
             <select value={newReq.level} onChange={(e) => setNewReq({ ...newReq, level: e.target.value })}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm">
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white">
               <option value="">Any Level</option>
               <option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Expert</option>
             </select>
             <input type="number" min="0" value={newReq.yearsRequired} onChange={(e) => setNewReq({ ...newReq, yearsRequired: e.target.value })}
-              className="w-24 px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Yrs" />
+              className="w-24 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400" placeholder="Yrs" />
             <label className="flex items-center gap-2 text-sm text-slate-600 px-2">
               <input type="checkbox" checked={newReq.required} onChange={(e) => setNewReq({ ...newReq, required: e.target.checked })} />
               Required
@@ -159,7 +159,7 @@ export default function NewJobPage() {
             <label className="block text-sm font-medium text-slate-700 mb-2">Nice to Have</label>
             <div className="flex gap-2">
               <input value={newNice} onChange={(e) => setNewNice(e.target.value)}
-                className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400"
                 placeholder="e.g. GraphQL, Rust..." onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (newNice) { setForm((f) => ({ ...f, niceToHave: [...f.niceToHave, newNice] })); setNewNice(""); } } }} />
               <button type="button" onClick={() => { if (newNice) { setForm((f) => ({ ...f, niceToHave: [...f.niceToHave, newNice] })); setNewNice(""); } }}
                 className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-sm">Add</button>
@@ -180,7 +180,7 @@ export default function NewJobPage() {
           <h2 className="font-semibold text-slate-800">Responsibilities</h2>
           <div className="flex gap-2">
             <input value={newResp} onChange={(e) => setNewResp(e.target.value)}
-              className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400"
               placeholder="e.g. Design and implement REST APIs..."
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (newResp) { setForm((f) => ({ ...f, responsibilities: [...f.responsibilities, newResp] })); setNewResp(""); } } }} />
             <button type="button" onClick={() => { if (newResp) { setForm((f) => ({ ...f, responsibilities: [...f.responsibilities, newResp] })); setNewResp(""); } }}

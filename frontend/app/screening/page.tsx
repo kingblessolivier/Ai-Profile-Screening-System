@@ -85,7 +85,7 @@ export default function ScreeningPage() {
               </div>
             ) : (
               <select required value={jobId} onChange={(e) => setJobId(e.target.value)}
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">— Select a job opening —</option>
                 {jobs.map((j) => (
                   <option key={j._id} value={j._id}>{j.title} · {j.experienceLevel} · {j.location}</option>
