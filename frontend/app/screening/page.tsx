@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -97,7 +98,7 @@ function StepRow({
   );
 }
 
-export default function ScreeningPage() {
+function ScreeningPageContent() {
   const dispatch     = useDispatch<AppDispatch>();
   const router       = useRouter();
   const searchParams = useSearchParams();
@@ -501,5 +502,19 @@ export default function ScreeningPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function ScreeningPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-5xl mx-auto py-16 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--text-muted)" }} />
+        </div>
+      }
+    >
+      <ScreeningPageContent />
+    </Suspense>
   );
 }
