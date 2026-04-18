@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { AppDispatch, RootState } from "@/store";
 import { fetchMe } from "@/store/authSlice";
 import Sidebar from "./Sidebar";
+import { ScreeningNotifications, ScreeningBadge } from "@/components/ScreeningNotifications";
 import { Search, Bell } from "lucide-react";
 
 const PUBLIC_PATHS = ["/login", "/signup"];
@@ -16,8 +17,10 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   const pathname = usePathname();
   const { user } = useSelector((s: RootState) => s.auth);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    setIsMounted(true);
     const token = localStorage.getItem("talentai_token");
     if (token && !user) {
       dispatch(fetchMe());
@@ -27,18 +30,17 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   }, [dispatch, user, pathname, router]);
 
   const isPublic = PUBLIC_PATHS.includes(pathname);
-  if (isPublic) return <>{children}</>;
+  
+  // Only render conditionally after mounting to avoid hydration mismatch
+  if (isMounted && isPublic) return <>{children}</>;
 
   const initials = user?.name
     ? user.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : "U";
 
   return (
-    <div className="flex min-h-screen" style={{ background: "var(--surface-raised)" }}>
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed((prev) => !prev)}
-      />
+    <div className="flex min-h-screen" style={{ background: "var(--surface-raised)", ["--sidebar-width" as any]: sidebarCollapsed ? "72px" : "240px" }}>
+      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((p) => !p)} />
 
       {/* Right column: topbar + content */}
       <div
@@ -68,7 +70,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
               }}
               onFocus={(e) => {
                 e.currentTarget.style.borderColor = "var(--accent)";
-                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,0.12)";
+                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(15,103,255,0.15)";
               }}
               onBlur={(e) => {
                 e.currentTarget.style.borderColor = "var(--border)";
@@ -77,35 +79,44 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             />
           </div>
 
-          {/* Right actions */}
-          <div className="flex items-center gap-2 ml-auto">
+          {/* Right side controls */}
+          <div className="flex items-center gap-4 ml-auto">
+            {/* Notifications button */}
             <button
               className="relative p-2 rounded-lg transition-colors"
-              style={{ color: "var(--text-muted)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-inset)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              style={{
+                background: "linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(247, 251, 255, 0.78))",
+                backdropFilter: "blur(14px)",
+                border: "1px solid var(--border)",
+                boxShadow: "var(--shadow-sm)",
+              }}
               aria-label="Notifications"
             >
-              <Bell className="w-4 h-4" />
+              <Bell className="w-4 h-4" style={{ color: "var(--text-primary)" }} />
+              <ScreeningBadge />
             </button>
 
-            <div className="w-px h-5 bg-slate-200" />
+            {/* Divider */}
+            <div className="h-6 w-px bg-slate-200" />
 
-            {/* User avatar */}
-            <div className="flex items-center gap-2.5 pl-1">
+            {/* User section */}
+            <div className="flex items-center gap-2.5">
+              {/* Avatar */}
               <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                style={{ background: "linear-gradient(135deg, #1d4ed8, #0284c7)" }}
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                style={{ background: "linear-gradient(140deg, #0f67ff, #0c8f8f 62%, #ff9b3f)" }}
                 aria-hidden
               >
                 {initials}
               </div>
+
+              {/* User info (hidden on mobile) */}
               {user && (
                 <div className="hidden sm:block">
                   <p className="text-sm font-semibold leading-none" style={{ color: "var(--text-primary)" }}>
                     {user.name}
                   </p>
-                  <p className="text-xs mt-0.5 leading-none" style={{ color: "var(--text-muted)" }}>
+                  <p className="mt-0.5 text-xs leading-none" style={{ color: "var(--text-muted)" }}>
                     {user.role || "Recruiter"}
                   </p>
                 </div>
@@ -114,9 +125,22 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
           </div>
         </header>
 
-        {/* ── Page Content ────────────────────────────────────────────────────── */}
-        <main className="flex-1 p-8 overflow-auto animate-fade-in">{children}</main>
+        {/* Main content area */}
+        <main className="flex-1 overflow-auto">
+          {/* Full-width content with decorative background */}
+          <div className="relative min-h-screen overflow-hidden bg-white">
+            {/* Main content */}
+            <div className="mx-auto max-w-7xl px-4 pb-8 pt-4 sm:px-6 lg:px-8">
+              <div className="rounded-3xl p-3 sm:p-5 lg:p-6" style={{ background: "rgba(255, 255, 255, 0.95)" }}>
+                {children}
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
+
+      {/* Global screening notifications — renders at root, z-[9999] */}
+      <ScreeningNotifications />
     </div>
   );
 }

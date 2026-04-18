@@ -70,6 +70,9 @@ const candidatesSlice = createSlice({
         s.items = s.items.filter((c) => c._id !== a.payload);
         s.total -= 1;
       })
+      .addCase(deleteCandidate.rejected, (s, a) => {
+        s.error = String(a.error.message);
+      })
       .addCase(createCandidate.fulfilled, (s) => {
         s.total += 1;
       });

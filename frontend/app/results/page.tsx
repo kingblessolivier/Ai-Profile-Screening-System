@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import Link from "next/link";
 import { AppDispatch, RootState } from "@/store";
 import { fetchResults } from "@/store/screeningSlice";
 import { PageHeader } from "@/components/layout";
 import { EmptyState, StatCard } from "@/components/ui";
+import { DeleteConfirmationModal } from "@/components/modals";
 import {
   BarChart3, Clock, Users, Trophy, ChevronRight,
-  CheckCircle2, Hourglass, Gauge, Zap, Brain,
+  CheckCircle2, Hourglass, Gauge, Zap, Brain, Trash2,
 } from "lucide-react";
 
 function ScoreRing({ score }: { score: number }) {
@@ -28,7 +29,34 @@ export default function ResultsPage() {
   const dispatch = useDispatch<AppDispatch>();
   const { results, loading } = useSelector((s: RootState) => s.screening);
 
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const targetResult = results.find((r) => r._id === deleteTarget);
+
   useEffect(() => { dispatch(fetchResults()); }, [dispatch]);
+
+  const handleDeleteClick = (e: React.MouseEvent, resultId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDeleteTarget(resultId);
+    setDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/results/${deleteTarget}`, { method: "DELETE" });
+      if (res.ok) {
+        dispatch(fetchResults());
+      }
+    } catch (err) {
+      console.error("Failed to delete result:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const completedRuns  = results.filter((r) => r.status === "completed" || !r.status).length;
   const pendingRuns    = results.filter((r) => r.status === "pending" || r.status === "running").length;
@@ -198,6 +226,13 @@ export default function ResultsPage() {
 
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <ScoreRing score={topScore} />
+                    <button
+                      onClick={(e) => handleDeleteClick(e, r._id)}
+                      className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                      title="Delete result"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                     <ChevronRight className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
                   </div>
                 </div>
@@ -206,6 +241,17 @@ export default function ResultsPage() {
           })}
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={deleteModalOpen}
+        onClose={() => { setDeleteModalOpen(false); setDeleteTarget(null); }}
+        onConfirm={handleConfirmDelete}
+        title="Delete Screening Result"
+        description="This screening result and all associated data will be permanently deleted. This action cannot be undone."
+        itemName={targetResult?.jobTitle}
+        isLoading={isDeleting}
+      />
     </div>
   );
 }

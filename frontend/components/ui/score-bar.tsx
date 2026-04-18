@@ -24,18 +24,20 @@ export function ScoreBar({
 
   return (
     <div className={cn("w-full", className)}>
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-sm text-slate-600">{label}</span>
-        {showPercentage && (
-          <span className="text-sm font-semibold tabular-nums" style={{ color }}>
-            {value}%
-          </span>
-        )}
-      </div>
-      <div className={cn("w-full rounded-full bg-slate-100 overflow-hidden", height)}>
+      {label && (
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs text-slate-500 font-medium">{label}</span>
+          {showPercentage && (
+            <span className="text-xs font-bold tabular-nums" style={{ color }}>
+              {value}%
+            </span>
+          )}
+        </div>
+      )}
+      <div className={cn("w-full rounded-full bg-slate-200 overflow-hidden shadow-sm", height)}>
         <div
           className={cn(
-            "h-full rounded-full",
+            "h-full rounded-full shadow-inner",
             animate && "transition-all duration-700 ease-out"
           )}
           style={{

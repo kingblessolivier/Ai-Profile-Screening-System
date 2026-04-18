@@ -152,6 +152,7 @@ export default function JobDetailsPage() {
   const [candSearch, setCandSearch]   = useState("");
   const [seedLoading, setSeedLoading] = useState(false);
   const [seedMsg, setSeedMsg]         = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [deleteMsg, setDeleteMsg]     = useState<{ type: "success" | "error"; text: string; id?: string } | null>(null);
 
   // Load job
   useEffect(() => {
@@ -168,8 +169,15 @@ export default function JobDetailsPage() {
     dispatch(fetchCandidates({ jobId }));
   }, [dispatch, jobId]);
 
-  const handleDeleteCandidate = (id: string) => {
-    dispatch(deleteCandidate(id));
+  const handleDeleteCandidate = async (id: string) => {
+    try {
+      await dispatch(deleteCandidate(id)).unwrap();
+      setDeleteMsg({ type: "success", text: "Candidate deleted successfully", id });
+      setTimeout(() => setDeleteMsg(null), 3000);
+    } catch (err) {
+      setDeleteMsg({ type: "error", text: String(err).includes("404") ? "Candidate not found" : "Failed to delete candidate" });
+      setTimeout(() => setDeleteMsg(null), 4000);
+    }
   };
 
   const filteredCandidates = candidates.filter((c) =>
@@ -449,6 +457,27 @@ export default function JobDetailsPage() {
               borderTop: "none",
             }}>
             {seedMsg.text}
+          </div>
+        )}
+
+        {/* Delete message */}
+        {deleteMsg && (
+          <div className="fixed bottom-4 right-4 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg flex items-center gap-2"
+            style={{
+              background: deleteMsg.type === "success" ? "var(--success)" : "var(--error)",
+              color: "white",
+            }}>
+            {deleteMsg.type === "success" ? (
+              <>
+                <CheckCircle className="w-4 h-4" />
+                {deleteMsg.text}
+              </>
+            ) : (
+              <>
+                <AlertTriangle className="w-4 h-4" />
+                {deleteMsg.text}
+              </>
+            )}
           </div>
         )}
 

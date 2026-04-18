@@ -17,7 +17,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         ["--font-display" as string]: "Arial, Helvetica, sans-serif",
       }}
     >
-      <body className="min-h-full" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
+      <body 
+        className="min-h-full" 
+        style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
+        suppressHydrationWarning
+      >
         <Providers>{children}</Providers>
       </body>
     </html>
