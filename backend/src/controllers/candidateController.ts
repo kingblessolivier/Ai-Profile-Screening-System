@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import fs from "fs";
-import path from "path";
 import csv from "csv-parser";
 import pdfParse from "pdf-parse";
 import { Candidate } from "../models/Candidate";
@@ -47,9 +46,10 @@ async function flagPotentialDuplicate(candidateId: string, profile: TalentProfil
 
 export async function getCandidates(req: Request, res: Response): Promise<void> {
   try {
-    const { source, search, page = "1", limit = "20" } = req.query;
+    const { source, search, page = "1", limit = "20", jobId } = req.query;
     const filter: Record<string, unknown> = {};
     if (source) filter.source = source;
+    if (jobId) filter.jobIds = String(jobId); // filter candidates assigned to this job
     if (search) {
       const s = String(search);
       filter.$or = [
@@ -157,30 +157,56 @@ export async function uploadPDFResumes(req: Request, res: Response): Promise<voi
       return;
     }
 
-    const results: { file: string; status: string; email?: string; error?: string }[] = [];
+    const results: {
+      file: string;
+      status: "imported" | "skipped" | "error";
+      name?: string;
+      email?: string;
+      skillsCount?: number;
+      experienceCount?: number;
+      error?: string;
+    }[] = [];
 
     for (const file of files) {
       try {
-        const data = await pdfParse(fs.readFileSync(file.path));
-        const rawText = data.text;
-        const profile = await parseResumeToProfile(rawText);
+        const pdfBuffer = fs.readFileSync(file.path);
+
+        // Extract raw text for storage — best-effort, not required for parsing
+        let rawText = "";
+        try {
+          const parsed = await pdfParse(pdfBuffer);
+          rawText = parsed.text;
+        } catch {
+          // Gemini reads the PDF directly so text extraction is optional
+        }
+
+        // Pass the PDF buffer so Gemini reads it natively; rawText is used if quota fallback triggers
+        const profile = await parseResumeToProfile({ pdfBuffer }, undefined, rawText);
+
         if (!profile.email || !profile.firstName) {
-          results.push({ file: file.originalname, status: "skipped", error: "Could not extract name/email" });
+          results.push({ file: file.originalname, status: "skipped", error: "Could not extract name or email from resume" });
         } else {
           const jobIds = req.body.jobId ? [req.body.jobId] : undefined;
           await Candidate.findOneAndUpdate(
             { email: profile.email },
-            { $set: { ...profile, ...(jobIds ? { jobIds } : {}), source: "pdf", rawText } },
+            { $set: { ...profile, ...(jobIds ? { jobIds } : {}), source: "pdf", rawText: rawText || undefined } },
             { upsert: true, new: true }
           );
           const saved = await Candidate.findOne({ email: profile.email });
           if (saved) void flagPotentialDuplicate(String(saved._id), saved as unknown as TalentProfile);
-          results.push({ file: file.originalname, status: "imported", email: profile.email });
+          results.push({
+            file: file.originalname,
+            status: "imported",
+            name: `${profile.firstName} ${profile.lastName}`,
+            email: profile.email,
+            skillsCount: profile.skills?.length ?? 0,
+            experienceCount: profile.experience?.length ?? 0,
+          });
         }
       } catch (e) {
         results.push({ file: file.originalname, status: "error", error: String(e) });
       } finally {
-        fs.unlinkSync(file.path); // clean up temp
+        try { fs.unlinkSync(file.path); } catch { /* already gone */ }
       }
     }
 

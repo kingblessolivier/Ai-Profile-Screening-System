@@ -163,6 +163,7 @@ export interface ScreeningResult {
   errorMessage?: string;
   poolInsights?: PoolInsights;
   createdAt?: string;
+  thinkingLog?: string;
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────

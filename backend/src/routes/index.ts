@@ -11,6 +11,7 @@ import {
 import {
   runScreening, getScreeningResults, getScreeningResult,
   getLatestResultForJob, deleteScreeningResult, exportScreeningResultPdf,
+  streamThinking,
 } from "../controllers/screeningController";
 
 const router = Router();
@@ -52,8 +53,9 @@ router.delete("/candidates/:id", authenticate, deleteCandidate);
 router.post("/screening/run", authenticate, runScreening);
 router.get("/screening", authenticate, getScreeningResults);
 router.get("/screening/job/:jobId/latest", authenticate, getLatestResultForJob);
-router.get("/screening/:id", authenticate, getScreeningResult);
+router.get("/screening/:id/thinking-stream", authenticate, streamThinking);
 router.get("/screening/:id/report/pdf", authenticate, exportScreeningResultPdf);
+router.get("/screening/:id", authenticate, getScreeningResult);
 router.delete("/screening/:id", authenticate, deleteScreeningResult);
 
 export default router;

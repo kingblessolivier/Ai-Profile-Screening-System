@@ -159,6 +159,7 @@ export interface ScreeningResult {
   completedAt?: string;
   errorMessage?: string;
   poolInsights?: PoolInsights;
+  thinkingLog?: string;
 }
 
 export interface PoolInsights {

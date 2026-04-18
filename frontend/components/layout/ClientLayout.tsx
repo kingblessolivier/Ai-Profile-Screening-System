@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useRouter, usePathname } from "next/navigation";
 import { AppDispatch, RootState } from "@/store";
@@ -15,6 +15,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useSelector((s: RootState) => s.auth);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("talentai_token");
@@ -34,10 +35,16 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="flex min-h-screen" style={{ background: "var(--surface-raised)" }}>
-      <Sidebar />
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((prev) => !prev)}
+      />
 
       {/* Right column: topbar + content */}
-      <div className="flex-1 ml-60 flex flex-col min-h-screen">
+      <div
+        className="flex-1 flex flex-col min-h-screen transition-[margin] duration-300"
+        style={{ marginLeft: sidebarCollapsed ? "72px" : "240px" }}
+      >
         {/* ── Top Bar ─────────────────────────────────────────────────────────── */}
         <header
           className="h-14 flex items-center px-6 gap-4 sticky top-0 z-20"

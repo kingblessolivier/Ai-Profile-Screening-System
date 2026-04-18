@@ -6,20 +6,46 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AppDispatch, RootState } from "@/store";
 import { fetchJob, updateJob } from "@/store/jobsSlice";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
-import { JobRequirement } from "@/types";
+import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Job } from "@/types";
+import { PageHeader } from "@/components/layout";
+import { Button } from "@/components/ui";
 
-const EMPTY_FORM = {
+type JobForm = {
+  title: Job["title"];
+  description: Job["description"];
+  department: string;
+  location: Job["location"];
+  type: Job["type"];
+  experienceLevel: Job["experienceLevel"];
+  requirements: Job["requirements"];
+  niceToHave: string[];
+  responsibilities: Job["responsibilities"];
+};
+
+const EMPTY_FORM: JobForm = {
   title: "",
   description: "",
   department: "",
   location: "",
-  type: "Full-time" as const,
-  experienceLevel: "Mid-level" as const,
-  requirements: [] as JobRequirement[],
-  niceToHave: [] as string[],
-  responsibilities: [] as string[],
+  type: "Full-time",
+  experienceLevel: "Mid-level",
+  requirements: [],
+  niceToHave: [],
+  responsibilities: [],
 };
+
+const fieldClassName =
+  "w-full rounded-xl px-3 py-2.5 text-sm transition-all focus:outline-none";
+
+function FieldLabel({ children, required = false }: { children: string; required?: boolean }) {
+  return (
+    <label className="mb-1.5 block text-xs font-semibold tracking-wide" style={{ color: "var(--text-secondary)" }}>
+      {children}
+      {required && <span className="ml-0.5 opacity-60">*</span>}
+    </label>
+  );
+}
 
 export default function EditJobPage() {
   const dispatch = useDispatch<AppDispatch>();
@@ -29,7 +55,7 @@ export default function EditJobPage() {
   const { current } = useSelector((state: RootState) => state.jobs);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState<JobForm>(EMPTY_FORM);
   const [newReq, setNewReq] = useState({ skill: "", level: "", yearsRequired: "", required: true });
   const [newNice, setNewNice] = useState("");
   const [newResp, setNewResp] = useState("");
@@ -126,56 +152,57 @@ export default function EditJobPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="flex items-center gap-3 mb-8">
-        <Link href="/jobs" className="p-2 hover:bg-slate-100 rounded-lg text-slate-500">
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Edit Job</h1>
-          <p className="text-slate-500 mt-0.5">Update the role requirements for AI screening</p>
-        </div>
-      </div>
+    <div className="max-w-4xl mx-auto animate-slide-up">
+      <PageHeader
+        backHref="/jobs"
+        eyebrow="Recruitment"
+        title="Edit Job"
+        subtitle="Update the role requirements for AI screening"
+      />
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-          <h2 className="font-semibold text-slate-800">Basic Information</h2>
+        <div className="card p-6 space-y-4">
+          <h2 className="font-semibold" style={{ color: "var(--text-primary)" }}>Basic Information</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Job Title *</label>
+              <FieldLabel required>Job Title</FieldLabel>
               <input
                 required
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={fieldClassName}
+                style={{ background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
                 placeholder="e.g., Senior Backend Engineer"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Department</label>
+              <FieldLabel>Department</FieldLabel>
               <input
                 value={form.department}
                 onChange={(e) => setForm({ ...form, department: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={fieldClassName}
+                style={{ background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
                 placeholder="Engineering"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Location *</label>
+              <FieldLabel required>Location</FieldLabel>
               <input
                 required
                 value={form.location}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={fieldClassName}
+                style={{ background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
                 placeholder="Kigali, Rwanda / Remote"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Employment Type</label>
+              <FieldLabel>Employment Type</FieldLabel>
               <select
                 value={form.type}
                 onChange={(e) => setForm({ ...form, type: e.target.value as typeof form.type })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={fieldClassName}
+                style={{ background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
               >
                 <option>Full-time</option>
                 <option>Part-time</option>
@@ -183,11 +210,12 @@ export default function EditJobPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Experience Level</label>
+              <FieldLabel>Experience Level</FieldLabel>
               <select
                 value={form.experienceLevel}
                 onChange={(e) => setForm({ ...form, experienceLevel: e.target.value as typeof form.experienceLevel })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={fieldClassName}
+                style={{ background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
               >
                 <option>Junior</option>
                 <option>Mid-level</option>
@@ -196,33 +224,36 @@ export default function EditJobPage() {
               </select>
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-slate-700 mb-1">Job Description *</label>
+              <FieldLabel required>Job Description</FieldLabel>
               <textarea
                 required
                 rows={4}
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className={`${fieldClassName} resize-none`}
+                style={{ background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
                 placeholder="Describe the role, responsibilities, and ideal candidate..."
               />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-          <h2 className="font-semibold text-slate-800">Required Skills</h2>
+        <div className="card p-6 space-y-4">
+          <h2 className="font-semibold" style={{ color: "var(--text-primary)" }}>Required Skills</h2>
           <div className="flex gap-2 flex-wrap">
             <input
               value={newReq.skill}
               onChange={(e) => setNewReq({ ...newReq, skill: e.target.value })}
-              className="flex-1 min-w-[140px] px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400"
+              className={`flex-1 min-w-[140px] ${fieldClassName}`}
+              style={{ background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
               placeholder="Skill (e.g. Node.js)"
               onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addRequirement())}
             />
             <select
               value={newReq.level}
               onChange={(e) => setNewReq({ ...newReq, level: e.target.value })}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white"
+              className={fieldClassName}
+              style={{ width: "auto", background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
             >
               <option value="">Any Level</option>
               <option>Beginner</option>
@@ -235,10 +266,11 @@ export default function EditJobPage() {
               min="0"
               value={newReq.yearsRequired}
               onChange={(e) => setNewReq({ ...newReq, yearsRequired: e.target.value })}
-              className="w-24 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400"
+              className={`w-24 ${fieldClassName}`}
+              style={{ background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
               placeholder="Yrs"
             />
-            <label className="flex items-center gap-2 text-sm text-slate-600 px-2">
+            <label className="flex items-center gap-2 text-sm px-2" style={{ color: "var(--text-secondary)" }}>
               <input
                 type="checkbox"
                 checked={newReq.required}
@@ -246,19 +278,16 @@ export default function EditJobPage() {
               />
               Required
             </label>
-            <button
-              type="button"
-              onClick={addRequirement}
-              className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm flex items-center gap-1"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
+            <Button type="button" onClick={addRequirement}>
+              <Plus className="w-4 h-4" /> Add
+            </Button>
           </div>
           <div className="flex flex-wrap gap-2">
             {form.requirements.map((r, i) => (
               <span
                 key={`${r.skill}-${i}`}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1 rounded-full ${r.required ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}
+                className="flex items-center gap-1.5 text-xs px-3 py-1 rounded-full"
+                style={r.required ? { background: "var(--accent-light)", color: "var(--accent)" } : { background: "var(--surface-inset)", color: "var(--text-secondary)" }}
               >
                 {r.skill}
                 {r.level ? ` · ${r.level}` : ""}
@@ -275,12 +304,13 @@ export default function EditJobPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Nice to Have</label>
+            <FieldLabel>Nice to Have</FieldLabel>
             <div className="flex gap-2">
               <input
                 value={newNice}
                 onChange={(e) => setNewNice(e.target.value)}
-                className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400"
+                className={`flex-1 ${fieldClassName}`}
+                style={{ background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
                 placeholder="e.g. GraphQL, Rust..."
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -292,22 +322,22 @@ export default function EditJobPage() {
                   }
                 }}
               />
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => {
                   if (newNice) {
                     setForm((f) => ({ ...f, niceToHave: [...f.niceToHave, newNice] }));
                     setNewNice("");
                   }
                 }}
-                className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-sm"
               >
                 Add
-              </button>
+              </Button>
             </div>
             <div className="flex flex-wrap gap-2 mt-2">
               {form.niceToHave.map((n, i) => (
-                <span key={`${n}-${i}`} className="flex items-center gap-1.5 text-xs px-3 py-1 bg-amber-100 text-amber-700 rounded-full">
+                <span key={`${n}-${i}`} className="flex items-center gap-1.5 text-xs px-3 py-1 rounded-full" style={{ background: "#fffbeb", color: "#d97706" }}>
                   {n}
                   <button type="button" onClick={() => setForm((f) => ({ ...f, niceToHave: f.niceToHave.filter((_, j) => j !== i) }))}>
                     <Trash2 className="w-3 h-3" />
@@ -318,13 +348,14 @@ export default function EditJobPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-          <h2 className="font-semibold text-slate-800">Responsibilities</h2>
+        <div className="card p-6 space-y-4">
+          <h2 className="font-semibold" style={{ color: "var(--text-primary)" }}>Responsibilities</h2>
           <div className="flex gap-2">
             <input
               value={newResp}
               onChange={(e) => setNewResp(e.target.value)}
-              className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 bg-white placeholder:text-slate-400"
+              className={`flex-1 ${fieldClassName}`}
+              style={{ background: "var(--surface-inset)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
               placeholder="e.g. Design and implement REST APIs..."
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -336,28 +367,28 @@ export default function EditJobPage() {
                 }
               }}
             />
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => {
                 if (newResp) {
                   setForm((f) => ({ ...f, responsibilities: [...f.responsibilities, newResp] }));
                   setNewResp("");
                 }
               }}
-              className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-sm"
             >
               Add
-            </button>
+            </Button>
           </div>
           <ul className="space-y-2">
             {form.responsibilities.map((r, i) => (
-              <li key={`${r}-${i}`} className="flex items-center gap-2 text-sm text-slate-700">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
+              <li key={`${r}-${i}`} className="flex items-center gap-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "var(--accent)" }} />
                 <span className="flex-1">{r}</span>
                 <button
                   type="button"
                   onClick={() => setForm((f) => ({ ...f, responsibilities: f.responsibilities.filter((_, j) => j !== i) }))}
-                  className="text-slate-400 hover:text-red-500"
+                  style={{ color: "var(--text-muted)" }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -367,17 +398,12 @@ export default function EditJobPage() {
         </div>
 
         <div className="flex gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl font-medium flex items-center justify-center gap-2 transition-colors"
-          >
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+          <Button type="submit" disabled={saving} className="flex-1" loading={saving}>
             Save Changes
-          </button>
-          <Link href="/jobs" className="px-6 py-3 border border-slate-300 hover:bg-slate-50 rounded-xl font-medium text-slate-700 transition-colors">
-            Cancel
-          </Link>
+          </Button>
+          <Button type="button" asChild variant="outline">
+            <Link href="/jobs">Cancel</Link>
+          </Button>
         </div>
       </form>
     </div>
