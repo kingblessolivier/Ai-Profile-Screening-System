@@ -13,7 +13,7 @@ const initialState: ScreeningState = { results: [], current: null, loading: fals
 
 export const runScreening = createAsyncThunk(
   "screening/run",
-  async (payload: { jobId: string; shortlistSize: number; candidateIds?: string[] }, { rejectWithValue }) => {
+  async (payload: { jobId: string; shortlistSize: number; candidateIds?: string[]; model?: string }, { rejectWithValue }) => {
     try {
       const { data } = await api.post("/screening/run", payload);
       return data as ScreeningResult;

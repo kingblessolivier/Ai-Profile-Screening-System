@@ -61,6 +61,7 @@ const ScreeningResultSchema = new Schema<ScreeningResultDocument>(
     completedAt: { type: String },
     errorMessage: { type: String },
     poolInsights: PoolInsightsSchema,
+    thinkingLog: { type: String },
   },
   { timestamps: true }
 );

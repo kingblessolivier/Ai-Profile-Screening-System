@@ -1,9 +1,94 @@
 import { Request, Response } from "express";
+import { EventEmitter } from "events";
 import { Job } from "../models/Job";
 import { Candidate } from "../models/Candidate";
-import { ScreeningResultModel } from "../models/ScreeningResult";
+import { ScreeningResultModel, ScreeningResultDocument } from "../models/ScreeningResult";
 import { screenCandidates } from "../services/geminiService";
 import { TalentProfile } from "../types";
+
+// ─── In-memory thinking streams ───────────────────────────────────────────────
+// Maps resultId → EventEmitter so SSE clients can receive live thinking chunks.
+
+const thinkingBus = new Map<string, EventEmitter>();
+
+function getEmitter(resultId: string): EventEmitter {
+  if (!thinkingBus.has(resultId)) {
+    const emitter = new EventEmitter();
+    emitter.setMaxListeners(10);
+    thinkingBus.set(resultId, emitter);
+  }
+  return thinkingBus.get(resultId)!;
+}
+
+function cleanupEmitter(resultId: string) {
+  thinkingBus.get(resultId)?.removeAllListeners();
+  thinkingBus.delete(resultId);
+}
+
+// ─── SSE: stream thinking tokens in real-time ─────────────────────────────────
+
+export async function streamThinking(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", process.env.CLIENT_URL || "http://localhost:3000");
+  res.flushHeaders();
+
+  let closed = false;
+
+  const send = (data: Record<string, unknown>) => {
+    if (!closed) res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const finish = () => {
+    if (!closed) {
+      closed = true;
+      res.end();
+    }
+  };
+
+  // If result already completed, replay the stored thinking log
+  try {
+    const existing = await ScreeningResultModel.findById(id).select("status thinkingLog");
+    if (existing?.status === "completed" || existing?.status === "failed") {
+      if (existing.thinkingLog) {
+        send({ type: "chunk", text: existing.thinkingLog });
+      }
+      send({ type: "done", status: existing.status });
+      finish();
+      return;
+    }
+  } catch {
+    // fall through to live streaming
+  }
+
+  const emitter = getEmitter(id);
+
+  const onChunk = (text: string) => send({ type: "chunk", text });
+  const onDone = (status: string) => {
+    send({ type: "done", status });
+    finish();
+  };
+  const onError = (msg: string) => {
+    send({ type: "error", message: msg });
+    // don't finish here — onDone fires right after and will close cleanly
+  };
+
+  emitter.on("chunk", onChunk);
+  emitter.on("done", onDone);
+  emitter.on("error", onError);
+
+  req.on("close", () => {
+    closed = true;
+    emitter.removeListener("chunk", onChunk);
+    emitter.removeListener("done", onDone);
+    emitter.removeListener("error", onError);
+  });
+}
+
+// ─── PDF helpers ──────────────────────────────────────────────────────────────
 
 function sanitizePdfText(value: string): string {
   return value
@@ -77,7 +162,7 @@ function buildPdfBuffer(pages: string[][]): Buffer {
   return Buffer.from(pdf, "utf8");
 }
 
-function buildPdfReportLines(result: Awaited<ReturnType<typeof ScreeningResultModel.findById>>): string[][] {
+function buildPdfReportLines(result: ScreeningResultDocument | null): string[][] {
   if (!result) return [["No screening result found"]];
 
   const sections: string[] = [];
@@ -128,9 +213,11 @@ function buildPdfReportLines(result: Awaited<ReturnType<typeof ScreeningResultMo
   return pages.length > 0 ? pages : [["No content available"]];
 }
 
+// ─── Run screening ────────────────────────────────────────────────────────────
+
 export async function runScreening(req: Request, res: Response): Promise<void> {
   try {
-    const { jobId, shortlistSize = 10, candidateIds } = req.body;
+    const { jobId, shortlistSize = 10, candidateIds, model = "gemini-2.5-flash" } = req.body;
 
     if (!jobId) {
       res.status(400).json({ message: "jobId is required" });
@@ -143,12 +230,10 @@ export async function runScreening(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Fetch candidates — either specific ones, job-scoped candidates, or all
     const candidateDocs = candidateIds?.length
       ? await Candidate.find({ _id: { $in: candidateIds } })
       : await Candidate.find();
 
-    // If this job has any assigned candidates, prefer only those.
     const assignedCandidateDocs = await Candidate.find({ jobIds: jobId });
     const effectiveCandidates = assignedCandidateDocs.length > 0 ? assignedCandidateDocs : candidateDocs;
 
@@ -157,7 +242,6 @@ export async function runScreening(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Map mongoose docs to TalentProfile type
     const profiles: TalentProfile[] = effectiveCandidates.map((c) => ({
       _id: c.id,
       firstName: c.firstName,
@@ -210,24 +294,46 @@ export async function runScreening(req: Request, res: Response): Promise<void> {
 
     res.status(202).json(pending);
 
+    const resultId = String(pending._id);
+    const emitter = getEmitter(resultId);
+
     void (async () => {
       try {
-        await ScreeningResultModel.findByIdAndUpdate(pending._id, { progress: 35, aiModel: "gemini-2.0-flash" });
-        const result = await screenCandidates(jobPlain, profiles, Number(shortlistSize));
-        await ScreeningResultModel.findByIdAndUpdate(pending._id, {
+        await ScreeningResultModel.findByIdAndUpdate(resultId, {
+          progress: 35,
+          aiModel: model,
+        });
+
+        const result = await screenCandidates(
+          jobPlain,
+          profiles,
+          Number(shortlistSize),
+          (text) => emitter.emit("chunk", text),
+          model
+        );
+
+        await ScreeningResultModel.findByIdAndUpdate(resultId, {
           ...result,
           status: "completed",
           progress: 100,
           completedAt: new Date().toISOString(),
           errorMessage: undefined,
         });
+
+        emitter.emit("done", "completed");
       } catch (err) {
         console.error("Async screening error:", err);
-        await ScreeningResultModel.findByIdAndUpdate(pending._id, {
+        const msg = String(err);
+        await ScreeningResultModel.findByIdAndUpdate(resultId, {
           status: "failed",
           progress: 100,
-          errorMessage: String(err),
+          errorMessage: msg,
         });
+        emitter.emit("error", msg);
+        emitter.emit("done", "failed");
+      } finally {
+        // Clean up emitter after a delay to allow any late SSE subscribers to drain
+        setTimeout(() => cleanupEmitter(resultId), 30_000);
       }
     })();
   } catch (err) {
@@ -236,11 +342,13 @@ export async function runScreening(req: Request, res: Response): Promise<void> {
   }
 }
 
+// ─── CRUD ─────────────────────────────────────────────────────────────────────
+
 export async function getScreeningResults(req: Request, res: Response): Promise<void> {
   try {
     const results = await ScreeningResultModel.find()
       .sort({ createdAt: -1 })
-      .select("-shortlist.interviewQuestions"); // lighter list view
+      .select("-shortlist.interviewQuestions -thinkingLog");
     res.json(results);
   } catch (err) {
     res.status(500).json({ message: "Failed to fetch results", error: String(err) });

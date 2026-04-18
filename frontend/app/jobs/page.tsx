@@ -5,7 +5,8 @@ import { useDispatch, useSelector } from "react-redux";
 import Link from "next/link";
 import { AppDispatch, RootState } from "@/store";
 import { fetchJobs, deleteJob } from "@/store/jobsSlice";
-import { Plus, Briefcase, MapPin, Clock, Trash2, Edit2, Zap, Search, Eye } from "lucide-react";
+import { EmptyState, FilterBar, FilterChip, SearchInput } from "@/components/ui";
+import { Plus, Briefcase, MapPin, Clock, Trash2, Edit2, Zap, Search, Eye, LayoutList, LayoutGrid } from "lucide-react";
 
 const LEVEL_STYLE: Record<string, { bg: string; text: string }> = {
   Junior:     { bg: "#ecfdf5", text: "#059669" },
@@ -25,8 +26,19 @@ export default function JobsPage() {
   const { items: jobs, loading } = useSelector((s: RootState) => s.jobs);
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
+  const [view, setView] = useState<"list" | "cards">("cards");
 
   useEffect(() => { dispatch(fetchJobs()); }, [dispatch]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("jobs:view:mode");
+    if (saved === "list" || saved === "cards") setView(saved);
+  }, []);
+
+  const handleViewChange = (mode: "list" | "cards") => {
+    setView(mode);
+    localStorage.setItem("jobs:view:mode", mode);
+  };
 
   const filtered = jobs.filter((j) => {
     const matchSearch =
@@ -40,9 +52,12 @@ export default function JobsPage() {
   const levels = Array.from(new Set(jobs.map((j) => j.experienceLevel)));
 
   return (
-    <div className="max-w-5xl mx-auto animate-slide-up">
+    <div className="max-w-6xl mx-auto animate-slide-up pb-8">
       {/* ── Header ───────────────────────────────────────────────────────── */}
-      <div className="flex items-end justify-between mb-6 gap-4 flex-wrap">
+      <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white mb-6">
+        <div className="absolute -top-16 -right-16 w-44 h-44 bg-sky-100 rounded-full blur-2xl" />
+        <div className="absolute -bottom-20 -left-16 w-52 h-52 bg-cyan-50 rounded-full blur-2xl" />
+        <div className="relative p-6 md:p-8 flex items-end justify-between gap-4 flex-wrap">
         <div>
           <p className="text-xs font-semibold tracking-widest uppercase mb-1" style={{ color: "var(--accent)" }}>
             Recruitment
@@ -57,55 +72,66 @@ export default function JobsPage() {
             {jobs.length} opening{jobs.length !== 1 ? "s" : ""} posted
           </p>
         </div>
-        <Link
-          href="/jobs/new"
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all"
-          style={{ background: "linear-gradient(135deg, #2563eb, #1d4ed8)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 4px 14px rgba(37,99,235,0.4)")}
-          onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
-        >
-          <Plus className="w-4 h-4" />
-          Post Job
-        </Link>
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
+              <button
+                type="button"
+                onClick={() => handleViewChange("cards")}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                  view === "cards" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                Cards
+              </button>
+              <button
+                type="button"
+                onClick={() => handleViewChange("list")}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                  view === "list" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"
+                }`}
+              >
+                <LayoutList className="w-3.5 h-3.5" />
+                List
+              </button>
+            </div>
+
+            <Link
+              href="/jobs/new"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all"
+              style={{ background: "linear-gradient(135deg, #2563eb, #1d4ed8)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 4px 14px rgba(37,99,235,0.4)")}
+              onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
+            >
+              <Plus className="w-4 h-4" />
+              Post Job
+            </Link>
+          </div>
+        </div>
       </div>
 
       {/* ── Filters ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-3 mb-6">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: "var(--text-muted)" }} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search jobs, locations…"
-            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg focus:outline-none transition-all"
-            style={{
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              color: "var(--text-primary)",
-            }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(37,99,235,0.12)"; }}
-            onBlur={(e)  => { e.currentTarget.style.borderColor = "var(--border)";  e.currentTarget.style.boxShadow = "none"; }}
-          />
-        </div>
+      <FilterBar className="mb-6 items-center justify-between">
+        <SearchInput
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search jobs, locations..."
+          icon={<Search className="w-3.5 h-3.5" />}
+          className="flex-1 min-w-[200px] max-w-xs"
+        />
 
-        {/* Level filter chips */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           {["", ...levels].map((lvl) => (
-            <button
+            <FilterChip
               key={lvl}
+              label={lvl || "All Levels"}
+              active={levelFilter === lvl}
               onClick={() => setLevelFilter(lvl)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-              style={
-                levelFilter === lvl
-                  ? { background: "var(--accent)", color: "#fff" }
-                  : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-secondary)" }
-              }
-            >
-              {lvl || "All Levels"}
-            </button>
+              className="text-xs"
+            />
           ))}
         </div>
-      </div>
+      </FilterBar>
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
       {loading ? (
@@ -122,31 +148,16 @@ export default function JobsPage() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="card py-20 text-center">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: "var(--accent-light)" }}
-          >
-            <Briefcase className="w-7 h-7" style={{ color: "var(--accent)" }} />
-          </div>
-          <p className="font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-            {search || levelFilter ? "No jobs match your filters" : "No jobs yet"}
-          </p>
-          <p className="text-sm mb-5" style={{ color: "var(--text-muted)" }}>
-            {search || levelFilter ? "Try adjusting your search" : "Post your first job opening to get started"}
-          </p>
-          {!search && !levelFilter && (
-            <Link
-              href="/jobs/new"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
-              style={{ background: "var(--accent)" }}
-            >
-              <Plus className="w-4 h-4" /> Post your first job
-            </Link>
-          )}
+        <div className="card py-8">
+          <EmptyState
+            icon={<Briefcase className="w-7 h-7" />}
+            title={search || levelFilter ? "No jobs match your filters" : "No jobs yet"}
+            description={search || levelFilter ? "Try adjusting your search" : "Post your first job opening to get started"}
+            action={!search && !levelFilter ? { label: "Post your first job", href: "/jobs/new" } : undefined}
+          />
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className={view === "cards" ? "grid sm:grid-cols-2 xl:grid-cols-3 gap-4" : "space-y-3"}>
           {filtered.map((job) => {
             const lvlStyle = LEVEL_STYLE[job.experienceLevel] || { bg: "#f8fafc", text: "#64748b" };
             const typeStyle = TYPE_STYLE[job.type] || { bg: "#f8fafc", text: "#64748b" };
@@ -154,9 +165,9 @@ export default function JobsPage() {
             return (
               <div
                 key={job._id}
-                className="card card-hover p-5"
+                className={`card card-hover p-5 ${view === "cards" ? "h-full" : ""}`}
               >
-                <div className="flex items-start justify-between gap-4">
+                <div className={`flex gap-4 ${view === "cards" ? "flex-col" : "items-start justify-between"}`}>
                   {/* Left */}
                   <div className="flex-1 min-w-0">
                     {/* Title + badges */}
@@ -179,7 +190,7 @@ export default function JobsPage() {
                     </div>
 
                     {/* Meta */}
-                    <div className="flex items-center gap-4 text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+                    <div className="flex items-center gap-4 text-xs mb-3 flex-wrap" style={{ color: "var(--text-muted)" }}>
                       <span className="flex items-center gap-1">
                         <MapPin className="w-3 h-3" />
                         {job.location}
@@ -224,7 +235,7 @@ export default function JobsPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className={`flex items-center gap-1.5 flex-shrink-0 ${view === "cards" ? "pt-2 border-t border-slate-100" : ""}`}>
                     <Link
                       href={`/screening?jobId=${job._id}`}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all"

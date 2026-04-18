@@ -1,22 +1,17 @@
 /**
- * Gemini AI Service
- * ─────────────────
- * Orchestrates the AI reasoning layer using Google Gemini 2.0 Flash.
+ * Gemini AI Service (Thinking Edition)
+ * ──────────────────────────────────────
+ * Uses Google Gemini 2.5 Flash with thinking enabled.
  *
  * Flow:
  *   1. Deterministic scores computed first (scoringEngine.ts)
- *   2. Top candidates (pre-filtered by deterministic score) sent to Gemini
- *   3. Gemini provides: final score, strengths, gaps, recommendation, summary, interview Qs
- *   4. Results merged and returned
- *
- * Design Principles:
- *   - Structured prompts only (no freeform AI answers)
- *   - Pre-score filters reduce token usage and hallucination risk
- *   - Batch processing for large candidate pools (30 per call)
- *   - Strict JSON output enforced via prompt + extraction
+ *   2. Top candidates sent to Gemini with thinking mode ON
+ *   3. Thinking tokens streamed via callback → SSE → frontend
+ *   4. Gemini returns: final score, strengths, gaps, recommendation, summary, interview Qs
+ *   5. Results merged and returned with thinking log
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import {
   TalentProfile, Job, CandidateScore, ScreeningResult, ScoreBreakdown, SkillGapAnalysis,
 } from "../types";
@@ -24,30 +19,36 @@ import {
   computeDeterministicScore, computeSkillGap, computePoolInsights,
 } from "./scoringEngine";
 
-const MODEL = "gemini-2.0-flash";
-const BATCH_SIZE = 25; // candidates per Gemini call
+const MODEL_DEFAULT  = "gemini-2.5-flash";
+const THINKING_MODELS = new Set(["gemini-2.5-flash", "gemini-2.5-pro"]); // models that support includeThoughts
+const BATCH_SIZE      = 25;
 
-function getModel() {
+function getAI() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not set in environment variables");
-  return new GoogleGenerativeAI(apiKey).getGenerativeModel({ model: MODEL });
+  return new GoogleGenAI({ apiKey });
 }
 
-// Strip markdown fences Gemini may add despite instructions
 function extractJSON(text: string): string {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   return (fenced ? fenced[1] : text).trim();
 }
 
 function isGeminiQuotaError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
+  const msg = error instanceof Error ? error.message : String(error);
   return (
-    message.includes("429 Too Many Requests") ||
-    message.includes("Quota exceeded") ||
-    message.includes("rate limit") ||
-    message.includes("RESOURCE_EXHAUSTED")
+    msg.includes("429") ||
+    msg.includes("Quota exceeded") ||
+    msg.includes("rate limit") ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.includes("503") ||
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("high demand") ||
+    msg.includes("fetch failed")
   );
 }
+
+// ─── Fallback: pure deterministic scoring ────────────────────────────────────
 
 function buildDeterministicCandidateScore(
   candidate: TalentProfile,
@@ -74,11 +75,6 @@ function buildDeterministicCandidateScore(
     "Not Recommended";
 
   const name = `${candidate.firstName} ${candidate.lastName}`;
-  const evidence = [
-    `Skills score ${breakdown.skillsScore}/100 from direct requirement overlap`,
-    `Experience score ${breakdown.experienceScore}/100 from role history and tenure`,
-    `Projects score ${breakdown.projectsScore}/100 from applied project evidence`,
-  ];
 
   return {
     candidateId: candidate._id ?? candidate.email,
@@ -90,10 +86,14 @@ function buildDeterministicCandidateScore(
     breakdown,
     strengths: strengths.slice(0, 5),
     gaps,
-    evidence,
+    evidence: [
+      `Skills score ${breakdown.skillsScore}/100 from direct requirement overlap`,
+      `Experience score ${breakdown.experienceScore}/100 from role history and tenure`,
+      `Projects score ${breakdown.projectsScore}/100 from applied project evidence`,
+    ],
     confidence: Math.min(95, Math.max(55, compositeScore)),
     recommendation,
-    summary: `${name} received a deterministic score of ${compositeScore}/100 based on the available profile data. Screening fell back to the local scoring engine because Gemini quota was unavailable.`,
+    summary: `${name} received a deterministic score of ${compositeScore}/100. Screening fell back to the local scoring engine because Gemini quota was unavailable.`,
     interviewQuestions: [
       "Walk me through the most relevant project or role for this job.",
       "Which parts of the required stack are you strongest in, and where would you need support?",
@@ -134,7 +134,7 @@ function buildFallbackResult(
   };
 }
 
-// ─── Pre-process candidate into a clean evaluation object ─────────────────────
+// ─── Candidate summary for prompt ────────────────────────────────────────────
 
 function buildCandidateSummary(c: TalentProfile, score: number, breakdown: ScoreBreakdown) {
   const totalMonths = c.experience.reduce((acc, e) => {
@@ -163,7 +163,7 @@ function buildCandidateSummary(c: TalentProfile, score: number, breakdown: Score
   };
 }
 
-// ─── Build the main screening prompt ─────────────────────────────────────────
+// ─── Screening prompt ─────────────────────────────────────────────────────────
 
 function buildScreeningPrompt(
   job: Job,
@@ -236,20 +236,16 @@ CANDIDATE_${i + 1}:
     "      },",
     "      \"strengths\": [",
     "        \"5 years Node.js with microservices at scale\",",
-    "        \"Led AI integration project using Gemini API\",",
-    "        \"Open source contributor with 200+ GitHub stars\"",
+    "        \"Led AI integration project using Gemini API\"",
     "      ],",
     "      \"gaps\": [",
-    "        \"No direct experience with GraphQL (nice-to-have)\",",
-    "        \"Location may require relocation for on-site roles\"",
+    "        \"No direct experience with GraphQL (nice-to-have)\"",
     "      ],",
     "      \"recommendation\": \"Strongly Recommended\",",
-    "      \"summary\": \"Alice is a strong match with 5+ years of relevant Node.js experience, proven AI project delivery, and immediate availability. Her skill set directly covers 90% of required technologies.\",",
+    "      \"summary\": \"Strong match with 5+ years of relevant Node.js experience.\",",
     "      \"confidence\": 92,",
     "      \"evidence\": [",
-    "        \"5+ years of Node.js and TypeScript in production\",",
-    "        \"Integrated AI screening tools using Google Gemini API\",",
-    "        \"Built a talent marketplace platform with similar requirements\"",
+    "        \"5+ years of Node.js and TypeScript in production\"",
     "      ],",
     "      \"interviewQuestions\": [",
     "        \"Walk me through the architecture of your most recent AI integration project.\",",
@@ -257,9 +253,9 @@ CANDIDATE_${i + 1}:
     "        \"Describe a time you led a team through a complex technical migration.\"",
     "      ],",
     "      \"skillGapAnalysis\": {",
-    "        \"matched\": [\"Node.js\", \"PostgreSQL\", \"TypeScript\"],",
+    "        \"matched\": [\"Node.js\", \"PostgreSQL\"],",
     "        \"missing\": [\"GraphQL\"],",
-    "        \"bonus\": [\"Rust\", \"Go\"]",
+    "        \"bonus\": [\"Rust\"]",
     "      }",
     "    }",
     "  ]",
@@ -270,149 +266,57 @@ CANDIDATE_${i + 1}:
     "- matchScore must be between 0 and 100",
     "- strengths: 3-5 specific bullet points",
     "- gaps: 1-3 honest gaps",
-    "- confidence must be between 0 and 100 and reflect how well the profile supports the score",
-    "- evidence must include 2-4 short, specific facts grounded in the profile data",
+    "- confidence: 0-100",
+    "- evidence: 2-4 specific facts grounded in the profile data",
     "- interviewQuestions: exactly 3 tailored questions",
     "- Output ONLY the JSON object above, nothing else",
   ].join("\n");
-
 }
 
-// ─── Main screening orchestrator ──────────────────────────────────────────────
+// ─── Gemini call with thinking ────────────────────────────────────────────────
+// Uses non-streaming generateContent (more reliable on free tier than streaming).
+// Thinking tokens require includeThoughts: true in the config.
 
-export async function screenCandidates(
-  job: Job,
-  candidates: TalentProfile[],
-  shortlistSize: number = 10
-): Promise<Omit<ScreeningResult, "_id">> {
-  const startTime = Date.now();
+async function callGeminiWithThinking(
+  prompt: string,
+  onThinkingChunk: (text: string) => void,
+  model: string = MODEL_DEFAULT
+): Promise<{ responseText: string; thinkingText: string; modelUsed: string }> {
+  const ai = getAI();
+  const supportsThinking = THINKING_MODELS.has(model);
 
-  // Step 1: Deterministic pre-scoring for ALL candidates
-  const prescored = candidates.map(c => {
-    const { compositeScore, breakdown } = computeDeterministicScore(c, job);
-    const skillGap = computeSkillGap(c, job);
-    return { candidate: c, compositeScore, breakdown, skillGap };
+  const response = await ai.models.generateContent({
+    model,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    ...(supportsThinking ? {
+      config: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: 8192,
+        },
+      },
+    } : {}),
   });
 
-  // Step 2: Sort by pre-score and take top candidates for AI evaluation
-  // For large pools, only send top 2x shortlistSize to Gemini (saves tokens, keeps quality high)
-  const maxForAI = Math.min(prescored.length, shortlistSize * 3);
-  const topPrescored = prescored
-    .sort((a, b) => b.compositeScore - a.compositeScore)
-    .slice(0, maxForAI);
+  let thinkingText = "";
+  let responseText = "";
 
-  const fallback = () => buildFallbackResult(job, prescored, shortlistSize, startTime);
-
-  let model;
-  try {
-    model = getModel();
-  } catch {
-    return fallback();
-  }
-
-  // Step 3: Run AI in batches
-  let allScores: CandidateScore[] = [];
-
-  const batches: typeof topPrescored[] = [];
-  for (let i = 0; i < topPrescored.length; i += BATCH_SIZE) {
-    batches.push(topPrescored.slice(i, i + BATCH_SIZE));
-  }
-
-  if (batches.length === 1) {
-    // Single batch
-    try {
-      const summaries = batches[0].map(({ candidate, compositeScore, breakdown }) =>
-        buildCandidateSummary(candidate, compositeScore, breakdown)
-      );
-      const prompt = buildScreeningPrompt(job, summaries, shortlistSize);
-      const result = await model.generateContent(prompt);
-      const text = extractJSON(result.response.text());
-      const parsed = JSON.parse(text);
-      allScores = mergeScores(parsed.shortlist, topPrescored);
-    } catch (error) {
-      if (isGeminiQuotaError(error)) {
-        return fallback();
-      }
-      throw error;
-    }
-  } else {
-    // Multi-batch: collect top from each, then final re-rank
-    const batchTopSize = Math.ceil(shortlistSize * 1.5);
-
-    let batchResults: CandidateScore[];
-    try {
-      batchResults = (
-        await Promise.all(
-          batches.map(async batch => {
-            const summaries = batch.map(({ candidate, compositeScore, breakdown }) =>
-              buildCandidateSummary(candidate, compositeScore, breakdown)
-            );
-            const prompt = buildScreeningPrompt(job, summaries, batchTopSize);
-            const result = await model.generateContent(prompt);
-            const text = extractJSON(result.response.text());
-            const parsed = JSON.parse(text);
-            return mergeScores(parsed.shortlist, batch);
-          })
-        )
-      ).flat();
-    } catch (error) {
-      if (isGeminiQuotaError(error)) {
-        return fallback();
-      }
-      throw error;
-    }
-
-    const combined = batchResults.sort((a, b) => b.matchScore - a.matchScore);
-    const top = combined.slice(0, shortlistSize * 2);
-
-    // Final re-rank pass with combined top candidates
-    const topOriginals = top
-      .map(s => topPrescored.find(p => p.candidate.email === s.email))
-      .filter(Boolean) as typeof topPrescored;
-
-    try {
-      const finalSummaries = topOriginals.map(({ candidate, compositeScore, breakdown }) =>
-        buildCandidateSummary(candidate, compositeScore, breakdown)
-      );
-      const finalPrompt = buildScreeningPrompt(job, finalSummaries, shortlistSize);
-      const finalResult = await model.generateContent(finalPrompt);
-      const finalText = extractJSON(finalResult.response.text());
-      allScores = mergeScores(JSON.parse(finalText).shortlist, topOriginals);
-    } catch (error) {
-      if (isGeminiQuotaError(error)) {
-        return fallback();
-      }
-      throw error;
+  for (const part of response.candidates?.[0]?.content?.parts ?? []) {
+    const text = part.text ?? "";
+    if (part.thought === true) {
+      thinkingText += text;
+    } else {
+      responseText += text;
     }
   }
 
-  // Step 4: Normalize ranks
-  allScores = allScores
-    .sort((a, b) => b.matchScore - a.matchScore)
-    .slice(0, shortlistSize)
-    .map((s, i) => ({ ...s, rank: i + 1 }));
+  if (thinkingText) onThinkingChunk(thinkingText);
 
-  // Step 5: Pool insights
-  const poolInsights = computePoolInsights(candidates, job);
-
-  return {
-    jobId: job._id ?? "",
-    jobTitle: job.title,
-    totalApplicants: candidates.length,
-    shortlistSize: allScores.length,
-    shortlist: allScores,
-    aiModel: MODEL,
-    processingTimeMs: Date.now() - startTime,
-    screeningDate: new Date().toISOString(),
-    status: "completed",
-    progress: 100,
-    startedAt: new Date(startTime).toISOString(),
-    completedAt: new Date().toISOString(),
-    poolInsights,
-  };
+  return { responseText, thinkingText, modelUsed: model };
 }
 
-// Merge AI output with pre-computed deterministic data
+// ─── Score merging ────────────────────────────────────────────────────────────
+
 function mergeScores(
   aiScores: Partial<CandidateScore>[],
   prescored: { candidate: TalentProfile; compositeScore: number; breakdown: ScoreBreakdown; skillGap: SkillGapAnalysis }[]
@@ -447,42 +351,286 @@ function mergeScores(
   });
 }
 
+// ─── Main screening orchestrator ──────────────────────────────────────────────
+
+export async function screenCandidates(
+  job: Job,
+  candidates: TalentProfile[],
+  shortlistSize: number = 10,
+  onThinkingChunk: (text: string) => void = () => undefined,
+  model: string = MODEL_DEFAULT
+): Promise<Omit<ScreeningResult, "_id">> {
+  const startTime = Date.now();
+
+  // Step 1: Deterministic pre-scoring
+  const prescored = candidates.map(c => {
+    const { compositeScore, breakdown } = computeDeterministicScore(c, job);
+    const skillGap = computeSkillGap(c, job);
+    return { candidate: c, compositeScore, breakdown, skillGap };
+  });
+
+  // Step 2: Sort and take top candidates for AI
+  const maxForAI = Math.min(prescored.length, shortlistSize * 3);
+  const topPrescored = prescored
+    .sort((a, b) => b.compositeScore - a.compositeScore)
+    .slice(0, maxForAI);
+
+  const fallback = () => buildFallbackResult(job, prescored, shortlistSize, startTime);
+
+  let allThinking = "";
+
+  // Wrap thinking callback to also accumulate the full log
+  const thinkingCollector = (text: string) => {
+    allThinking += text;
+    onThinkingChunk(text);
+  };
+
+  const batches: typeof topPrescored[] = [];
+  for (let i = 0; i < topPrescored.length; i += BATCH_SIZE) {
+    batches.push(topPrescored.slice(i, i + BATCH_SIZE));
+  }
+
+  let allScores: CandidateScore[] = [];
+  let finalModel = model;
+
+  try {
+    if (batches.length === 1) {
+      const summaries = batches[0].map(({ candidate, compositeScore, breakdown }) =>
+        buildCandidateSummary(candidate, compositeScore, breakdown)
+      );
+      const prompt = buildScreeningPrompt(job, summaries, shortlistSize);
+      const { responseText, modelUsed } = await callGeminiWithThinking(prompt, thinkingCollector, model);
+      finalModel = modelUsed;
+      const parsed = JSON.parse(extractJSON(responseText));
+      allScores = mergeScores(parsed.shortlist, topPrescored);
+    } else {
+      const batchTopSize = Math.ceil(shortlistSize * 1.5);
+
+      const batchResults = (
+        await Promise.all(
+          batches.map(async (batch, batchIdx) => {
+            const summaries = batch.map(({ candidate, compositeScore, breakdown }) =>
+              buildCandidateSummary(candidate, compositeScore, breakdown)
+            );
+            const prompt = buildScreeningPrompt(job, summaries, batchTopSize);
+            const batchThinking = (text: string) => {
+              if (batchIdx === 0) thinkingCollector(text);
+            };
+            const { responseText, modelUsed } = await callGeminiWithThinking(prompt, batchThinking, model);
+            if (batchIdx === 0) finalModel = modelUsed;
+            const parsed = JSON.parse(extractJSON(responseText));
+            return mergeScores(parsed.shortlist, batch);
+          })
+        )
+      ).flat();
+
+      const combined = batchResults.sort((a, b) => b.matchScore - a.matchScore);
+      const top = combined.slice(0, shortlistSize * 2);
+
+      const topOriginals = top
+        .map(s => topPrescored.find(p => p.candidate.email === s.email))
+        .filter(Boolean) as typeof topPrescored;
+
+      const finalSummaries = topOriginals.map(({ candidate, compositeScore, breakdown }) =>
+        buildCandidateSummary(candidate, compositeScore, breakdown)
+      );
+      const finalPrompt = buildScreeningPrompt(job, finalSummaries, shortlistSize);
+      const { responseText, modelUsed } = await callGeminiWithThinking(finalPrompt, thinkingCollector, model);
+      finalModel = modelUsed;
+      allScores = mergeScores(JSON.parse(extractJSON(responseText)).shortlist, topOriginals);
+    }
+  } catch (error) {
+    if (isGeminiQuotaError(error)) return fallback();
+    throw error;
+  }
+
+  allScores = allScores
+    .sort((a, b) => b.matchScore - a.matchScore)
+    .slice(0, shortlistSize)
+    .map((s, i) => ({ ...s, rank: i + 1 }));
+
+  return {
+    jobId: job._id ?? "",
+    jobTitle: job.title,
+    totalApplicants: candidates.length,
+    shortlistSize: allScores.length,
+    shortlist: allScores,
+    aiModel: finalModel,
+    processingTimeMs: Date.now() - startTime,
+    screeningDate: new Date().toISOString(),
+    status: "completed",
+    progress: 100,
+    startedAt: new Date(startTime).toISOString(),
+    completedAt: new Date().toISOString(),
+    poolInsights: computePoolInsights(candidates, job),
+    thinkingLog: allThinking || undefined,
+  };
+}
+
 // ─── Resume parser ────────────────────────────────────────────────────────────
 
-export async function parseResumeToProfile(rawText: string, emailHint?: string): Promise<Partial<TalentProfile>> {
-  const model = getModel();
+const RESUME_PARSE_PROMPT = `You are an expert resume parser for Umurava, an African tech talent platform. Read the resume carefully and extract ALL structured information. Return ONLY valid JSON (no markdown, no extra text) with this exact structure:
 
-  const prompt = `You are an expert resume parser. Extract ALL structured information from the resume text below and return it as JSON matching the Umurava Talent Profile Schema exactly.
-
-RESUME TEXT:
-${rawText.substring(0, 6000)}
-
-Return ONLY valid JSON (no markdown, no extra text) with this exact structure:
 {
   "firstName": "",
   "lastName": "",
-  "email": "${emailHint ?? ""}",
+  "email": "",
   "headline": "",
   "bio": "",
   "location": "",
   "skills": [{"name": "", "level": "Beginner|Intermediate|Advanced|Expert", "yearsOfExperience": 0}],
   "languages": [{"name": "", "proficiency": "Basic|Conversational|Fluent|Native"}],
-  "experience": [{"company": "", "role": "", "startDate": "YYYY-MM", "endDate": "YYYY-MM", "description": "", "technologies": [], "isCurrent": false}],
+  "experience": [{"company": "", "role": "", "startDate": "YYYY-MM", "endDate": "YYYY-MM or Present", "description": "", "technologies": [], "isCurrent": false}],
   "education": [{"institution": "", "degree": "", "fieldOfStudy": "", "startYear": 0, "endYear": 0}],
   "certifications": [{"name": "", "issuer": "", "issueDate": "YYYY-MM"}],
   "projects": [{"name": "", "description": "", "technologies": [], "role": "", "link": "", "startDate": "YYYY-MM", "endDate": "YYYY-MM"}],
   "availability": {"status": "Available", "type": "Full-time"},
-  "socialLinks": {"linkedin": "", "github": "", "portfolio": ""}
+  "socialLinks": {"linkedin": "", "github": "", "portfolio": "", "twitter": ""}
 }
 
-Rules:
-- skill levels must be one of: Beginner, Intermediate, Advanced, Expert
-- dates must be YYYY-MM format
-- if endDate is current, use today's date in YYYY-MM format and set isCurrent: true
-- infer headline from most recent role if not explicitly stated
-- estimate skill levels from context (years, responsibilities described)`;
+Extraction rules:
+- skill.level must be exactly one of: Beginner, Intermediate, Advanced, Expert — infer from years and context
+- skill.yearsOfExperience: estimate from work history mentions
+- all dates must be YYYY-MM (e.g. "2022-03"); for current roles set isCurrent: true and endDate to today
+- headline: use the person's stated title or infer from their most recent role
+- bio: summary/objective section text if present
+- extract ALL skills including technologies mentioned inside experience and projects
+- extract ALL projects explicitly listed
+- socialLinks: extract any LinkedIn, GitHub, portfolio, Twitter URLs found in the resume
+- availability.status must be one of: "Available", "Open to Opportunities", "Not Available"
+- availability.type must be one of: "Full-time", "Part-time", "Contract"
+- omit empty arrays; leave string fields as "" if not found
+- return ONLY the JSON object, nothing else`;
 
-  const result = await model.generateContent(prompt);
-  const text = extractJSON(result.response.text());
-  return JSON.parse(text) as Partial<TalentProfile>;
+// ─── Text-based fallback resume parser (no AI needed) ────────────────────────
+
+function parseResumeFromText(rawText: string): Partial<TalentProfile> {
+  const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  // Email
+  const emailMatch = rawText.match(/[\w.+-]+@[\w-]+\.[a-z]{2,}/i);
+  const email = emailMatch?.[0]?.toLowerCase() ?? "";
+
+  // Name — first non-empty line that looks like a name (no @, no digits dominating)
+  const nameLine = lines.find((l) => l.length > 2 && l.length < 60 && !l.includes("@") && !/^\d/.test(l));
+  const nameParts = (nameLine ?? "").split(/\s+/);
+  const firstName = nameParts[0] ?? "";
+  const lastName  = nameParts.slice(1).join(" ");
+
+  // LinkedIn / GitHub / portfolio
+  const linkedinMatch   = rawText.match(/linkedin\.com\/in\/[\w-]+/i);
+  const githubMatch     = rawText.match(/github\.com\/[\w-]+/i);
+  const portfolioMatch  = rawText.match(/https?:\/\/(?!linkedin|github)[\w.-]+\.[a-z]{2,}[\w./%-]*/i);
+
+  // Skills — look for comma/pipe/semicolon separated lists near "Skills" heading
+  const skillsSection = rawText.match(/(?:skills?|technologies|tech stack)[:\s\n]+([^\n]{10,300})/i)?.[1] ?? "";
+  const skillNames = skillsSection
+    .split(/[,|;\n•·]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 1 && s.length < 40 && !/^\d+$/.test(s))
+    .slice(0, 20);
+
+  const skills = skillNames.map((name) => ({
+    name,
+    level: "Intermediate" as const,
+    yearsOfExperience: 1,
+  }));
+
+  // Location — line containing city/country patterns
+  const locationMatch = rawText.match(/(?:location|address|city)[:\s]+([^\n]{3,50})/i)
+    ?? rawText.match(/\b(Kigali|Nairobi|Lagos|Kampala|Dar es Salaam|Accra|Addis Ababa|Johannesburg|Cape Town|Rwanda|Kenya|Uganda|Nigeria|Ghana|Ethiopia|Tanzania|South Africa)\b/i);
+  const location = locationMatch?.[1]?.trim() ?? locationMatch?.[0]?.trim() ?? "Africa";
+
+  // Headline — look for title/role line
+  const headlineMatch = rawText.match(/(?:title|role|position|headline)[:\s]+([^\n]{5,80})/i);
+  const headline = headlineMatch?.[1]?.trim() ?? (lastName ? `${firstName} ${lastName}` : firstName || "Professional");
+
+  return {
+    firstName,
+    lastName,
+    email,
+    headline,
+    location,
+    skills: skills.length > 0 ? skills : [{ name: "General", level: "Intermediate", yearsOfExperience: 1 }],
+    experience: [],
+    education: [],
+    projects: [],
+    certifications: [],
+    languages: [],
+    availability: { status: "Available", type: "Full-time" },
+    socialLinks: {
+      linkedin: linkedinMatch ? `https://${linkedinMatch[0]}` : "",
+      github: githubMatch ? `https://${githubMatch[0]}` : "",
+      portfolio: portfolioMatch?.[0] ?? "",
+    },
+  };
+}
+
+// ─── Extract retry-after seconds from a 429 error message ────────────────────
+
+function extractRetryAfter(error: unknown): number {
+  const msg = error instanceof Error ? error.message : String(error);
+  const match = msg.match(/retry[^\d]*(\d+(?:\.\d+)?)\s*s/i);
+  return match ? Math.ceil(parseFloat(match[1])) + 1 : 20;
+}
+
+function isQuota429(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Quota exceeded");
+}
+
+// ─── Main resume parser ───────────────────────────────────────────────────────
+
+export async function parseResumeToProfile(
+  input: { pdfBuffer: Buffer } | { rawText: string },
+  emailHint?: string,
+  rawTextFallback?: string
+): Promise<Partial<TalentProfile>> {
+  const ai = getAI();
+
+  const prompt = emailHint
+    ? RESUME_PARSE_PROMPT.replace('"email": ""', `"email": "${emailHint}"`)
+    : RESUME_PARSE_PROMPT;
+
+  const parts: Array<{ inlineData?: { mimeType: string; data: string }; text?: string }> = [];
+
+  if ("pdfBuffer" in input) {
+    parts.push({ inlineData: { mimeType: "application/pdf", data: input.pdfBuffer.toString("base64") } });
+  } else {
+    parts.push({ text: `RESUME TEXT:\n${input.rawText.substring(0, 8000)}` });
+  }
+  parts.push({ text: prompt });
+
+  const tryGemini = async (model: string) => {
+    const response = await ai.models.generateContent({
+      model,
+      contents: [{ role: "user", parts }],
+    });
+    const rawResponse = response.text ?? "";
+    const text = extractJSON(rawResponse);
+    return JSON.parse(text) as Partial<TalentProfile>;
+  };
+
+  // Attempt 1: gemini-2.5-flash (same quota pool as screening — avoids 2.0-flash exhaustion)
+  try {
+    return await tryGemini("gemini-2.5-flash");
+  } catch (err1) {
+    if (!isQuota429(err1)) throw err1;
+
+    // Wait the suggested retry delay then try once more
+    const wait = extractRetryAfter(err1) * 1000;
+    console.warn(`[resume parser] gemini-2.5-flash quota hit, retrying in ${wait}ms…`);
+    await new Promise((r) => setTimeout(r, Math.min(wait, 25_000)));
+
+    try {
+      return await tryGemini("gemini-2.5-flash");
+    } catch (err2) {
+      if (!isQuota429(err2)) throw err2;
+
+      // All Gemini quotas exhausted — fall back to text-based extraction
+      console.warn("[resume parser] All Gemini quotas exhausted — using text-based fallback parser");
+      const rawText = "rawText" in input ? input.rawText : (rawTextFallback ?? "");
+      return parseResumeFromText(rawText);
+    }
+  }
 }

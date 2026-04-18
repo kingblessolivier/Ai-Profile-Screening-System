@@ -22,7 +22,7 @@ const initialState: CandidatesState = {
 
 export const fetchCandidates = createAsyncThunk(
   "candidates/fetchAll",
-  async (params?: { source?: string; search?: string; page?: number }) => {
+  async (params?: { source?: string; search?: string; page?: number; jobId?: string }) => {
     const { data } = await api.get("/candidates", { params });
     return data as { candidates: Candidate[]; total: number; page: number; pages: number };
   }

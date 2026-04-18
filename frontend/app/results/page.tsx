@@ -5,6 +5,8 @@ import { useDispatch, useSelector } from "react-redux";
 import Link from "next/link";
 import { AppDispatch, RootState } from "@/store";
 import { fetchResults } from "@/store/screeningSlice";
+import { PageHeader } from "@/components/layout";
+import { EmptyState, StatCard } from "@/components/ui";
 import {
   BarChart3, Clock, Users, Trophy, ChevronRight,
   CheckCircle2, Hourglass, Gauge, Zap, Brain,
@@ -46,44 +48,38 @@ export default function ResultsPage() {
 
   return (
     <div className="max-w-5xl mx-auto animate-slide-up">
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="mb-8">
-        <p className="text-xs font-semibold tracking-widest uppercase mb-1" style={{ color: "var(--ai)" }}>
-          AI Engine
-        </p>
-        <h1
-          className="text-3xl font-bold"
-          style={{ color: "var(--text-primary)", fontFamily: "var(--font-display, system-ui)" }}
-        >
-          Screening Results
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-          {results.length} screening run{results.length !== 1 ? "s" : ""}
-          {results.length > 0 && ` · avg ${avgProcessing}s processing`}
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="AI Engine"
+        title="Screening Results"
+        subtitle={`${results.length} screening run${results.length !== 1 ? "s" : ""}${results.length > 0 ? ` · avg ${avgProcessing}s processing` : ""}`}
+      />
 
       {/* ── Stats ──────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {[
-          { label: "Total Runs",    value: results.length, icon: BarChart3,   color: "#2563eb" },
-          { label: "Completed",     value: completedRuns,  icon: CheckCircle2, color: "#059669" },
-          { label: "In Progress",   value: pendingRuns,    icon: Hourglass,   color: "#0284c7" },
-          { label: "Avg Top Score", value: `${avgTopScore}%`, icon: Gauge,    color: "#d97706" },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="card p-4">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center mb-3"
-              style={{ background: color + "15" }}
-            >
-              <Icon className="w-4 h-4" style={{ color }} />
-            </div>
-            <p className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display, system-ui)" }}>
-              {value}
-            </p>
-            <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{label}</p>
-          </div>
-        ))}
+        <StatCard
+          label="Total Runs"
+          value={results.length}
+          icon={<BarChart3 className="w-5 h-5" />}
+          color="blue"
+        />
+        <StatCard
+          label="Completed"
+          value={completedRuns}
+          icon={<CheckCircle2 className="w-5 h-5" />}
+          color="green"
+        />
+        <StatCard
+          label="In Progress"
+          value={pendingRuns}
+          icon={<Hourglass className="w-5 h-5" />}
+          color="purple"
+        />
+        <StatCard
+          label="Avg Top Score"
+          value={`${avgTopScore}%`}
+          icon={<Gauge className="w-5 h-5" />}
+          color="amber"
+        />
       </div>
 
       {/* ── List ───────────────────────────────────────────────────────────── */}
@@ -100,27 +96,13 @@ export default function ResultsPage() {
           ))}
         </div>
       ) : results.length === 0 ? (
-        <div className="card py-20 text-center">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: "var(--ai-light)" }}
-          >
-            <Brain className="w-7 h-7" style={{ color: "var(--ai)" }} />
-          </div>
-          <p className="font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-            No screenings yet
-          </p>
-          <p className="text-sm mb-5" style={{ color: "var(--text-muted)" }}>
-            Run your first AI screening to generate ranked shortlists with evidence
-          </p>
-          <Link
-            href="/screening"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ background: "linear-gradient(135deg, #0284c7, #2563eb)" }}
-          >
-            <Zap className="w-3.5 h-3.5" />
-            Run First Screening
-          </Link>
+        <div className="card py-8">
+          <EmptyState
+            icon={<Brain className="w-7 h-7" />}
+            title="No screenings yet"
+            description="Run your first AI screening to generate ranked shortlists with evidence"
+            action={{ label: "Run First Screening", href: "/screening" }}
+          />
         </div>
       ) : (
         <div className="space-y-3">

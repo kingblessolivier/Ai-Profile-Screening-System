@@ -6,7 +6,7 @@ import { useDispatch } from "react-redux";
 import { AppDispatch } from "@/store";
 import { logout } from "@/store/authSlice";
 import {
-  LayoutDashboard, Briefcase, Users, Zap, BarChart3, Upload, LogOut, Brain,
+  LayoutDashboard, Briefcase, Users, Zap, BarChart3, Upload, LogOut, Brain, ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 /*
@@ -58,49 +58,82 @@ const NAV_SECTIONS = [
   },
 ];
 
-export default function Sidebar() {
+type SidebarProps = {
+  collapsed: boolean;
+  onToggle: () => void;
+};
+
+export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const dispatch = useDispatch<AppDispatch>();
 
   return (
     <aside
-      className="fixed inset-y-0 left-0 w-60 flex flex-col z-30 select-none"
-      style={{ background: S.bg, borderRight: `1px solid ${S.border}` }}
+      className="fixed inset-y-0 left-0 flex flex-col z-30 select-none transition-[width] duration-300"
+      style={{
+        width: collapsed ? "72px" : "240px",
+        background: S.bg,
+        borderRight: `1px solid ${S.border}`,
+      }}
     >
       {/* ── Brand ─────────────────────────────────────────────────────────── */}
       <div
-        className="flex items-center gap-3 px-5 py-5 flex-shrink-0"
+        className="flex items-center px-4 py-4 flex-shrink-0"
         style={{ borderBottom: `1px solid ${S.border}` }}
       >
-        <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ background: S.logoBg, border: "1px solid rgba(59,130,246,0.3)" }}
-        >
-          <Brain className="w-4.5 h-4.5 text-white" style={{ width: "18px", height: "18px" }} />
-        </div>
-        <div>
-          <p
-            className="font-bold text-sm leading-tight text-white tracking-tight"
-            style={{ fontFamily: "var(--font-display, system-ui)" }}
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: S.logoBg, border: "1px solid rgba(59,130,246,0.3)" }}
           >
-            TalentAI
-          </p>
-          <p className="text-xs leading-tight mt-0.5" style={{ color: S.sub }}>
-            AI Recruiting Platform
-          </p>
+            <Brain className="w-4.5 h-4.5 text-white" style={{ width: "18px", height: "18px" }} />
+          </div>
+          {!collapsed && (
+            <div>
+              <p
+                className="font-bold text-sm leading-tight text-white tracking-tight"
+                style={{ fontFamily: "var(--font-display, system-ui)" }}
+              >
+                TalentAI
+              </p>
+              <p className="text-xs leading-tight mt-0.5" style={{ color: S.sub }}>
+                AI Recruiting Platform
+              </p>
+            </div>
+          )}
         </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="ml-auto h-8 w-8 rounded-lg flex items-center justify-center transition-colors"
+          style={{ color: S.inactiveText }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = S.hoverBg;
+            e.currentTarget.style.color = S.hoverText;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = S.inactiveText;
+          }}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
       </div>
 
       {/* ── Navigation ────────────────────────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
         {NAV_SECTIONS.map(({ label, items }) => (
           <div key={label}>
-            <p
-              className="text-xs font-bold px-3 mb-1.5 tracking-widest uppercase"
-              style={{ color: S.sectionLabel }}
-            >
-              {label}
-            </p>
+            {!collapsed && (
+              <p
+                className="text-xs font-bold px-3 mb-1.5 tracking-widest uppercase"
+                style={{ color: S.sectionLabel }}
+              >
+                {label}
+              </p>
+            )}
             <div className="space-y-0.5">
               {items.map(({ href, label: itemLabel, icon: Icon, badge }: {
                 href: string; label: string; icon: React.ElementType; badge?: string;
@@ -113,13 +146,17 @@ export default function Sidebar() {
                   <Link
                     key={href}
                     href={href}
-                    className="flex items-center gap-3 rounded-lg text-sm font-medium transition-all"
+                    className="flex items-center rounded-lg text-sm font-medium transition-all"
                     style={{
-                      padding: "8px 12px 8px 10px",
+                      justifyContent: collapsed ? "center" : "flex-start",
+                      gap: collapsed ? "0px" : "12px",
+                      padding: collapsed ? "10px" : "8px 12px 8px 10px",
                       borderLeft: `2px solid ${active ? S.activeBar : "transparent"}`,
                       background: active ? S.activeBg : "transparent",
                       color: active ? S.activeText : S.inactiveText,
                     }}
+                    aria-label={itemLabel}
+                    title={itemLabel}
                     onMouseEnter={(e) => {
                       if (!active) {
                         e.currentTarget.style.background = S.hoverBg;
@@ -134,8 +171,8 @@ export default function Sidebar() {
                     }}
                   >
                     <Icon className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span className="flex-1 truncate">{itemLabel}</span>
-                    {badge && (
+                    {!collapsed && <span className="flex-1 truncate">{itemLabel}</span>}
+                    {!collapsed && badge && (
                       <span
                         className="font-bold rounded-full"
                         style={{
@@ -168,8 +205,10 @@ export default function Sidebar() {
             dispatch(logout());
             window.location.href = "/login";
           }}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full transition-all text-left"
+          className="flex items-center rounded-lg text-sm font-medium w-full transition-all text-left"
           style={{ color: S.footer }}
+          aria-label="Sign Out"
+          title="Sign Out"
           onMouseEnter={(e) => {
             e.currentTarget.style.background = S.hoverBg;
             e.currentTarget.style.color = S.footerHover;
@@ -178,9 +217,19 @@ export default function Sidebar() {
             e.currentTarget.style.background = "transparent";
             e.currentTarget.style.color = S.footer;
           }}
+          
         >
+          <div
+            className="w-full flex items-center"
+            style={{
+              justifyContent: collapsed ? "center" : "flex-start",
+              gap: collapsed ? "0px" : "12px",
+              padding: collapsed ? "8px" : "8px 12px",
+            }}
+          >
           <LogOut className="w-3.5 h-3.5" />
-          Sign Out
+          {!collapsed && "Sign Out"}
+          </div>
         </button>
       </div>
     </aside>
